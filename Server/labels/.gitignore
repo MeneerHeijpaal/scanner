@@ -1,0 +1,13 @@
+# Ignore the SQLite database file (contains user data)
+labels.db
+
+# But keep the schema and scripts
+!schema.sql
+!init_database.py
+!README.md
+!.gitignore
+
+# Ignore SQLite temporary files
+*.db-journal
+*.db-wal
+*.db-shm

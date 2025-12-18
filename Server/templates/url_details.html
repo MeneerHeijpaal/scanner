@@ -1,0 +1,243 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Details - {{ item.url }}</title>
+  <link rel="apple-touch-icon" sizes="180x180" href="{{ url_for('static', filename='icons/apple-touch-icon.png') }}">
+  <link rel="icon" type="image/png" sizes="32x32" href="{{ url_for('static', filename='icons/favicon-32x32.png') }}">
+  <link rel="icon" type="image/png" sizes="16x16" href="{{ url_for('static', filename='icons/favicon-16x16.png') }}">
+  <link rel="manifest" href="{{ url_for('static', filename='icons/site.webmanifest') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+  <a href="{{ url_for('index', ip=ip_query, url=url_query, body_hash=body_hash_query, header_hash=header_hash_query, page=page) }}" class="back-link">← Back to search</a>
+  <h1 class="page-title">Details: {{ item.url }}</h1>
+
+  <div class="details-container">
+    <div class="details-inner">
+      <div class="details-grid">
+    <!-- Basic Info Card -->
+    <div class="details-card">
+      <div class="card-title">Basic Information</div>
+      {% if item.get('url') %}
+      <div class="field-label">URL</div>
+      <div class="field-value">{% if redirect_location %}<code>{{ item.url }}</code>{% else %}<a href="{{ item.url }}" target="_blank" rel="noopener noreferrer" class="external-link"><code>{{ item.url }}</code></a>{% endif %}</div>
+      {% endif %}
+      {% if redirect_location %}
+      <div class="field-label">Redirect</div>
+      <div class="field-value"><a href="{{ redirect_location }}" target="_blank" rel="noopener noreferrer" title="{{ redirect_location }}" class="external-link"><code>{% if redirect_location|length > 50 %}{{ redirect_location[:50] }}...{% else %}{{ redirect_location }}{% endif %}</code></a></div>
+      {% endif %}
+      {% if item.get('host') %}
+      <div class="field-label">Host (IP)</div>
+      <div class="field-value"><a href="{{ url_for('ip_hosts', ip=item.host) }}"><code>{{ item.host }}</code></a>{% if ip_count and ip_count > 1 %}<a href="{{ url_for('ip_hosts', ip=item.host) }}" class="match-count">({{ ip_count }} domains)</a>{% endif %}</div>
+      {% endif %}
+      {% if item.get('timestamp') %}
+      <div class="field-label">Timestamp</div>
+      <div class="field-value">{{ item.timestamp }}</div>
+      {% endif %}
+      {% if item.get('status_code') %}
+      <div class="field-label">Status Code</div>
+      <div class="field-value"><code>{{ item.status_code }}</code></div>
+      {% endif %}
+    </div>
+
+    <!-- Request/Response Metadata Card -->
+    <div class="details-card">
+      <div class="card-title">Request / Response Metadata</div>
+      {% if item.get('method') %}
+      <div class="field-label">Method</div>
+      <div class="field-value"><code>{{ item.method }}</code></div>
+      {% endif %}
+      {% if item.get('scheme') %}
+      <div class="field-label">Scheme</div>
+      <div class="field-value"><code>{{ item.scheme }}</code></div>
+      {% endif %}
+      {% if item.get('port') %}
+      <div class="field-label">Port</div>
+      <div class="field-value"><code>{{ item.port }}</code></div>
+      {% endif %}
+      {% if item.get('path') %}
+      <div class="field-label">Path</div>
+      <div class="field-value"><code>{{ item.path }}</code></div>
+      {% endif %}
+      {% if item.get('content_type') %}
+      <div class="field-label">Content Type</div>
+      <div class="field-value"><code>{{ item.content_type }}</code></div>
+      {% endif %}
+      {% if item.get('content_length') %}
+      <div class="field-label">Content Length</div>
+      <div class="field-value"><code>{{ item.content_length }}</code></div>
+      {% endif %}
+      {% if item.get('time') %}
+      <div class="field-label">Response Time</div>
+      <div class="field-value"><code>{{ item.time }}</code></div>
+      {% endif %}
+    </div>
+
+    <!-- Hashes Card -->
+    {% if item.get('hash') %}
+    <div class="details-card">
+      <div class="card-title">Content Hashes</div>
+      {% if item.hash.get('body_sha256') %}
+      <div class="field-label">Body SHA256</div>
+      <div class="field-value">{% if body_label %}<a href="{{ url_for('hash_details', hash_type='body', hash_value=item.hash.body_sha256) }}"><span class="hash-label-badge">{{ body_label }}</span></a>{% else %}<code>{{ item.hash.body_sha256 }}</code>{% endif %}{% if body_count and body_count > 1 %}<a href="{{ url_for('hash_details', hash_type='body', hash_value=item.hash.body_sha256) }}" class="match-count">({{ body_count }} matches)</a>{% endif %}</div>
+      {% endif %}
+      {% if item.hash.get('header_sha256') %}
+      <div class="field-label">Header SHA256</div>
+      <div class="field-value">{% if header_label %}<a href="{{ url_for('hash_details', hash_type='header', hash_value=item.hash.header_sha256) }}"><span class="hash-label-badge">{{ header_label }}</span></a>{% else %}<code>{{ item.hash.header_sha256 }}</code>{% endif %}{% if header_count and header_count > 1 %}<a href="{{ url_for('hash_details', hash_type='header', hash_value=item.hash.header_sha256) }}" class="match-count">({{ header_count }} matches)</a>{% endif %}</div>
+      {% endif %}
+    </div>
+    {% endif %}
+
+    <!-- Network Info Card -->
+    {% if item.get('a') or item.get('cname') or item.get('input') %}
+    <div class="details-card">
+      <div class="card-title">Network Information</div>
+      {% if item.get('input') %}
+      <div class="field-label">Input</div>
+      <div class="field-value"><code>{{ item.input }}</code></div>
+      {% endif %}
+      {% if item.get('a') and item.a|length > 0 %}
+      <div class="field-label">A Records (IPs)</div>
+      <div class="array-value">
+        {% for ip in item.a %}
+        <div class="array-item">{{ ip }}</div>
+        {% endfor %}
+      </div>
+      {% endif %}
+      {% if item.get('cname') and item.cname|length > 0 %}
+      <div class="field-label">CNAME Records</div>
+      <div class="array-value">
+        {% for cname in item.cname %}
+        <div class="array-item">{{ cname }}</div>
+        {% endfor %}
+      </div>
+      {% endif %}
+    </div>
+    {% endif %}
+
+    <!-- Technology & Analysis Card -->
+    {% if item.get('tech') or item.get('words') or item.get('lines') or item.get('knowledgebase') %}
+    <div class="details-card">
+      <div class="card-title">Technology & Analysis</div>
+      {% if item.get('tech') and item.tech|length > 0 %}
+      <div class="field-label">Detected Technologies</div>
+      <div class="array-value">
+        {% for tech in item.tech %}
+        <div class="array-item">{{ tech }}</div>
+        {% endfor %}
+      </div>
+      {% endif %}
+      {% if item.get('words') %}
+      <div class="field-label">Word Count</div>
+      <div class="field-value"><code>{{ item.words }}</code></div>
+      {% endif %}
+      {% if item.get('lines') %}
+      <div class="field-label">Line Count</div>
+      <div class="field-value"><code>{{ item.lines }}</code></div>
+      {% endif %}
+      {% if item.get('knowledgebase') %}
+      <div class="knowledgebase">
+        <div class="field-label">Knowledge Base</div>
+        <div class="object-value">
+          {% for key, value in item.knowledgebase.items() %}
+          <div><strong>{{ key }}:</strong> {{ value }}</div>
+          {% endfor %}
+        </div>
+      </div>
+      {% endif %}
+    </div>
+    {% endif %}
+
+    <!-- Raw Data card: links to download raw JSON / headers / request -->
+    <div class="details-card">
+      <div class="card-title">Raw Data</div>
+      <ul class="raw-links">
+        <li>
+          <a href="{{ url_for('download_raw', id=item['_id'], dtype='json') }}">Download Raw JSON</a>
+          <button class="copy-btn" data-url="{{ url_for('download_raw', id=item['_id'], dtype='json') }}" title="Copy content to clipboard">
+            <svg viewBox="0 0 24 24" focusable="false" aria-hidden="true"><path d="M16 1H4c-1.1 0-2 .9-2 2v14h2V3h12V1zm3 4H8c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h11c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2zm0 16H8V7h11v14z"/></svg>
+          </button>
+        </li>
+        {% if item.get('raw_header') or item.get('raw_header_decoded') %}
+        <li>
+          <a href="{{ url_for('download_raw', id=item['_id'], dtype='raw_header') }}">Download Raw Response Header</a>
+          <button class="copy-btn" data-url="{{ url_for('download_raw', id=item['_id'], dtype='raw_header') }}" title="Copy content to clipboard">
+            <svg viewBox="0 0 24 24" focusable="false" aria-hidden="true"><path d="M16 1H4c-1.1 0-2 .9-2 2v14h2V3h12V1zm3 4H8c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h11c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2zm0 16H8V7h11v14z"/></svg>
+          </button>
+        </li>
+        {% endif %}
+        {% if item.get('request') or item.get('request_decoded') %}
+        <li>
+          <a href="{{ url_for('download_raw', id=item['_id'], dtype='request') }}">Download Raw HTTP Request</a>
+          <button class="copy-btn" data-url="{{ url_for('download_raw', id=item['_id'], dtype='request') }}" title="Copy content to clipboard">
+            <svg viewBox="0 0 24 24" focusable="false" aria-hidden="true"><path d="M16 1H4c-1.1 0-2 .9-2 2v14h2V3h12V1zm3 4H8c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h11c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2zm0 16H8V7h11v14z"/></svg>
+          </button>
+        </li>
+        {% endif %}
+      </ul>
+    </div>
+
+    <!-- Response Headers Card (full width) -->
+    {% if item.get('header') and item.header|length > 0 %}
+    <div class="details-card headers-full">
+      <div class="card-title">Response Headers</div>
+      <div class="object-value">
+        {% for key, value in item.header.items() %}
+        <div><strong>{{ key }}:</strong> {{ value }}</div>
+        {% endfor %}
+      </div>
+    </div>
+    {% endif %}
+
+    <!-- Decoded Body Card (full width) -->
+    {% if item.get('body_decoded') %}
+    <div class="details-card full-width">
+      <div class="card-title">Response Body</div>
+      <div class="decoded-section">
+        <div class="decoded-label">📄 Decoded Content</div>
+        <div class="decoded-content">{{ item.body_decoded }}</div>
+      </div>
+    </div>
+    {% endif %}
+
+
+    <!-- (Response Headers moved above Response Body) -->
+
+      </div>
+    </div>
+  </div>
+
+  {% if ip_query or url_query or (page and page|int > 1) %}
+    <a href="{{ url_for('index', ip=ip_query, url=url_query, page=page) }}" class="back-link page-bottom-link">← Back to search</a>
+  {% else %}
+    <a href="{{ url_for('index') }}" class="back-link page-bottom-link">← Back to search</a>
+  {% endif %}
+  <script>
+    // Copy-to-clipboard: fetch the resource and copy its text content
+    async function copyFromUrl(url, btn) {
+      try {
+        const res = await fetch(url);
+        const text = await res.text();
+        await navigator.clipboard.writeText(text);
+        const orig = btn.innerHTML;
+        btn.innerHTML = '\u2713'; // check
+        setTimeout(()=> btn.innerHTML = orig, 1400);
+      } catch (err) {
+        console.error('copy failed', err);
+        alert('Copy failed: ' + err);
+      }
+    }
+
+    document.addEventListener('click', function(e){
+      const el = e.target.closest('.copy-btn');
+      if (!el) return;
+      const url = el.getAttribute('data-url');
+      if (!url) return;
+      e.preventDefault();
+      copyFromUrl(url, el);
+    });
+  </script>
+</body>
+</html>

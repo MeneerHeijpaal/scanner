@@ -1,0 +1,140 @@
+# Scanner Flask Application Configuration
+# This file contains all configuration settings for the Flask server
+
+# Flask Session Configuration
+flask:
+  # Secret key for session signing (can be overridden by SECRET_KEY environment variable)
+  # A random key will be generated if not provided
+  secret_key: null
+
+  # Session storage type
+  session_type: filesystem
+
+  # Whether sessions persist across browser restarts
+  session_permanent: false
+
+  # Whether to sign session cookies
+  session_use_signer: true
+
+  # Debug mode (can be overridden by FLASK_DEBUG environment variable)
+  debug: false
+
+  # Server host
+  host: "127.0.0.1"
+
+  # Server port
+  port: 8001
+
+# MongoDB Configuration
+mongodb:
+  # MongoDB connection URI (can be overridden by MONGO_URI environment variable)
+  uri: "mongodb://localhost:27017/"
+
+  # Database name (can be overridden by DB_NAME environment variable)
+  database: "urls"
+
+  # Collection name (can be overridden by COLLECTION_NAME environment variable)
+  collection: "data"
+
+  # Connection timeout in milliseconds
+  timeout: 5000
+
+# Elasticsearch Configuration
+elasticsearch:
+  # Enable/disable Elasticsearch integration
+  enabled: true
+
+  # Elasticsearch host (can be overridden by ES_HOST environment variable)
+  host: "localhost"
+
+  # Elasticsearch port (can be overridden by ES_PORT environment variable)
+  port: 9200
+
+  # Index name for storing body content
+  index_name: "scanner_bodies"
+
+  # Connection timeout in seconds
+  timeout: 30
+
+  # Bulk indexing batch size
+  bulk_batch_size: 5000
+
+  # Number of shards for the index
+  number_of_shards: 1
+
+  # Number of replicas for the index
+  number_of_replicas: 0
+
+# Input Validation Constants
+validation:
+  # Maximum length for query strings
+  max_query_length: 500
+
+  # Maximum results per page
+  max_per_page: 1000
+
+  # Maximum CIDR hosts (65536 = /16 network)
+  max_cidr_hosts: 65536
+
+  # Allowed hash types for label operations
+  allowed_hash_types:
+    - body
+    - header
+
+  # Maximum label length
+  max_label_length: 100
+
+  # Maximum hash length
+  max_hash_length: 128
+
+  # Maximum length for body search queries
+  max_body_search_length: 1000
+
+# Pagination Settings
+pagination:
+  # Default results per page
+  default_per_page: 50
+
+  # Default results per page for API endpoints
+  api_default_per_page: 100
+
+# Logging Configuration
+logging:
+  # Log level (DEBUG, INFO, WARNING, ERROR, CRITICAL)
+  level: INFO
+
+  # Log format
+  format: "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+
+# Database Paths
+paths:
+  # Labels database directory (relative to Server/)
+  labels_dir: "labels"
+
+  # SQLite database filename
+  sqlite_db: "labels.db"
+
+  # Database schema file
+  schema_file: "schema.sql"
+
+# MongoDB Indexes
+indexes:
+  - field: "hash.body_sha256"
+    name: "idx_hash_body_sha256"
+    order: 1
+
+  - field: "hash.header_sha256"
+    name: "idx_hash_header_sha256"
+    order: 1
+
+  - field: "ip"
+    name: "idx_ip"
+    order: 1
+
+  - field: "host"
+    name: "idx_host"
+    order: 1
+
+  - field: "url"
+    name: "idx_url"
+    order: 1

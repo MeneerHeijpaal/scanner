@@ -1,0 +1,970 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Scanner - Search</title>
+  <link rel="apple-touch-icon" sizes="180x180" href="{{ url_for('static', filename='icons/apple-touch-icon.png') }}">
+  <link rel="icon" type="image/png" sizes="32x32" href="{{ url_for('static', filename='icons/favicon-32x32.png') }}">
+  <link rel="icon" type="image/png" sizes="16x16" href="{{ url_for('static', filename='icons/favicon-16x16.png') }}">
+  <link rel="manifest" href="{{ url_for('static', filename='icons/site.webmanifest') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+  <style>
+    .counter-display {
+      text-align: center;
+      margin: 40px 0;
+    }
+    .counter-number {
+      font-size: 72px;
+      font-weight: bold;
+      color: #007bff;
+      margin: 20px 0;
+      font-family: 'Courier New', monospace;
+      cursor: pointer;
+      user-select: none;
+      transition: transform 0.2s ease;
+    }
+    .counter-number:hover {
+      color: #0056b3;
+      text-decoration: underline;
+    }
+    .counter-label {
+      font-size: 24px;
+      color: #666;
+      margin-bottom: 10px;
+    }
+    .filter-container {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+      gap: 30px;
+      margin-top: 40px;
+    }
+    .filter-section {
+      background: #f8f9fa;
+      padding: 20px;
+      border-radius: 8px;
+      border: 1px solid #dee2e6;
+    }
+    .filter-title {
+      font-size: 18px;
+      font-weight: 600;
+      margin-bottom: 15px;
+      color: #333;
+      border-bottom: 2px solid #007bff;
+      padding-bottom: 8px;
+    }
+    .filter-input {
+      width: 100%;
+      padding: 10px;
+      border: 1px solid #ced4da;
+      border-radius: 4px;
+      font-size: 14px;
+      margin-bottom: 10px;
+    }
+    .filter-input:focus {
+      outline: none;
+      border-color: #007bff;
+      box-shadow: 0 0 0 0.2rem rgba(0, 123, 255, 0.25);
+    }
+    .checkbox-list {
+      max-height: 300px;
+      overflow-y: auto;
+      border: 1px solid #dee2e6;
+      border-radius: 4px;
+      padding: 10px;
+      background: white;
+    }
+    .checkbox-item {
+      display: flex;
+      align-items: center;
+      padding: 6px 0;
+      cursor: pointer;
+    }
+    .checkbox-item:hover {
+      background: #f1f3f5;
+    }
+    .checkbox-item input[type="checkbox"] {
+      margin-right: 10px;
+      width: 18px;
+      height: 18px;
+      cursor: pointer;
+    }
+    .checkbox-item label {
+      cursor: pointer;
+      flex: 1;
+      user-select: none;
+    }
+    .search-input-wrapper {
+      position: relative;
+    }
+    .clear-button {
+      position: absolute;
+      right: 10px;
+      top: 50%;
+      transform: translateY(-50%);
+      background: none;
+      border: none;
+      color: #999;
+      cursor: pointer;
+      font-size: 20px;
+      line-height: 1;
+      padding: 0;
+      width: 24px;
+      height: 24px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .clear-button:hover {
+      color: #333;
+    }
+    .loading-overlay {
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background: rgba(255, 255, 255, 0.8);
+      display: none;
+      align-items: center;
+      justify-content: center;
+      z-index: 9999;
+    }
+    .loading-overlay.active {
+      display: flex;
+    }
+    .spinner {
+      border: 4px solid #f3f3f3;
+      border-top: 4px solid #007bff;
+      border-radius: 50%;
+      width: 50px;
+      height: 50px;
+      animation: spin 1s linear infinite;
+    }
+    @keyframes spin {
+      0% { transform: rotate(0deg); }
+      100% { transform: rotate(360deg); }
+    }
+    .error-message {
+      background: #f8d7da;
+      color: #721c24;
+      padding: 12px 20px;
+      border-radius: 4px;
+      margin: 20px 0;
+      border: 1px solid #f5c6cb;
+    }
+    .checkbox-search {
+      width: 100%;
+      padding: 8px;
+      margin-bottom: 10px;
+      border: 1px solid #ced4da;
+      border-radius: 4px;
+      font-size: 13px;
+    }
+    .select-all-btn {
+      background: #6c757d;
+      color: white;
+      border: none;
+      padding: 6px 12px;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 12px;
+      margin-bottom: 10px;
+      margin-right: 5px;
+    }
+    .select-all-btn:hover {
+      background: #5a6268;
+    }
+    .modal {
+      display: none;
+      position: fixed;
+      z-index: 10000;
+      left: 0;
+      top: 0;
+      width: 100%;
+      height: 100%;
+      background-color: rgba(0,0,0,0.5);
+      overflow: auto;
+    }
+    .modal.show {
+      display: block;
+    }
+    .modal-content {
+      background-color: #fff;
+      margin: 50px auto;
+      padding: 0;
+      border-radius: 8px;
+      width: 90%;
+      max-width: 1200px;
+      box-shadow: 0 4px 20px rgba(0,0,0,0.3);
+      max-height: 80vh;
+      display: flex;
+      flex-direction: column;
+    }
+    .modal-header {
+      padding: 20px 30px;
+      border-bottom: 1px solid #dee2e6;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      background: #f8f9fa;
+      border-radius: 8px 8px 0 0;
+    }
+    .modal-header h2 {
+      margin: 0;
+      font-size: 24px;
+      color: #333;
+    }
+    .modal-close {
+      font-size: 32px;
+      font-weight: bold;
+      color: #999;
+      cursor: pointer;
+      border: none;
+      background: none;
+      padding: 0;
+      width: 32px;
+      height: 32px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      line-height: 1;
+    }
+    .modal-close:hover {
+      color: #333;
+    }
+    .modal-body {
+      padding: 20px 30px;
+      overflow-y: auto;
+      flex: 1;
+    }
+    .modal-footer {
+      padding: 15px 30px;
+      border-top: 1px solid #dee2e6;
+      background: #f8f9fa;
+      border-radius: 0 0 8px 8px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .url-table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 10px;
+    }
+    .url-table th {
+      background: #f8f9fa;
+      padding: 12px;
+      text-align: left;
+      border-bottom: 2px solid #dee2e6;
+      font-weight: 600;
+      color: #333;
+      position: sticky;
+      top: 0;
+    }
+    .url-table td {
+      padding: 10px 12px;
+      border-bottom: 1px solid #e9ecef;
+    }
+    .url-table tr:hover {
+      background: #f8f9fa;
+    }
+    .url-link {
+      color: #007bff;
+      text-decoration: none;
+      word-break: break-all;
+    }
+    .url-link:hover {
+      text-decoration: underline;
+    }
+    .status-code {
+      padding: 4px 8px;
+      border-radius: 4px;
+      font-size: 12px;
+      font-weight: 600;
+      display: inline-block;
+    }
+    .status-2xx { background: #d4edda; color: #155724; }
+    .status-3xx { background: #d1ecf1; color: #0c5460; }
+    .status-4xx { background: #fff3cd; color: #856404; }
+    .status-5xx { background: #f8d7da; color: #721c24; }
+    .pagination {
+      display: flex;
+      gap: 10px;
+      align-items: center;
+    }
+    .pagination button {
+      padding: 8px 16px;
+      background: #007bff;
+      color: white;
+      border: none;
+      border-radius: 4px;
+      cursor: pointer;
+    }
+    .pagination button:hover:not(:disabled) {
+      background: #0056b3;
+    }
+    .pagination button:disabled {
+      background: #ccc;
+      cursor: not-allowed;
+    }
+    .pagination-info {
+      color: #666;
+      font-size: 14px;
+    }
+    .selected-items {
+      margin-top: 10px;
+      padding: 10px;
+      background: #e7f3ff;
+      border: 1px solid #b3d9ff;
+      border-radius: 4px;
+      min-height: 40px;
+      display: none;
+    }
+    .selected-items.has-items {
+      display: block;
+    }
+    .selected-items-label {
+      font-size: 12px;
+      font-weight: 600;
+      color: #0066cc;
+      margin-bottom: 8px;
+    }
+    .selected-item-badge {
+      display: inline-flex;
+      align-items: center;
+      background: #007bff;
+      color: white;
+      padding: 4px 8px;
+      border-radius: 4px;
+      margin: 2px;
+      font-size: 12px;
+      gap: 6px;
+    }
+    .selected-item-badge .remove {
+      cursor: pointer;
+      font-weight: bold;
+      padding: 0 4px;
+      border-radius: 3px;
+    }
+    .selected-item-badge .remove:hover {
+      background: rgba(255,255,255,0.3);
+    }
+  </style>
+</head>
+<body>
+  <div class="loading-overlay" id="loading">
+    <div class="spinner"></div>
+  </div>
+
+  <!-- URLs Modal -->
+  <div id="urlsModal" class="modal">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h2>Matching URLs</h2>
+        <button class="modal-close" onclick="closeModal()">&times;</button>
+      </div>
+      <div class="modal-body" id="modalBody">
+        <table class="url-table" id="urlsTable">
+          <thead>
+            <tr>
+              <th style="width: 15%;">IP Address</th>
+              <th style="width: 10%;">Status</th>
+              <th>URL</th>
+            </tr>
+          </thead>
+          <tbody id="urlsTableBody">
+            <tr>
+              <td colspan="3" style="text-align: center; padding: 40px; color: #999;">
+                Loading...
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="modal-footer">
+        <div style="display: flex; gap: 15px; align-items: center;">
+          <button onclick="downloadUrls()" style="padding: 8px 16px; background: #28a745; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 14px;">
+            Download URLs
+          </button>
+          <label style="display: flex; align-items: center; gap: 8px; cursor: pointer; font-size: 14px; color: #666;">
+            <input type="checkbox" id="domainsOnlyCheckbox" style="cursor: pointer; width: 16px; height: 16px;">
+            <span>Domains only</span>
+          </label>
+        </div>
+        <div style="display: flex; gap: 15px; align-items: center;">
+          <div class="pagination-info" id="paginationInfo">Page 1 of 1</div>
+          <div class="pagination">
+            <button id="prevPage" onclick="loadPage(currentPage - 1)" disabled>Previous</button>
+            <button id="nextPage" onclick="loadPage(currentPage + 1)" disabled>Next</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <h1 class="page-title">Scanner Search</h1>
+
+  {% if error %}
+  <div class="error-message">{{ error }}</div>
+  {% endif %}
+
+  <div class="details-card">
+    <div class="counter-display">
+      <div class="counter-label">Matching URLs</div>
+      <div class="counter-number" id="urlCounter" onclick="showUrls()" title="Click to view URLs">{{ total_urls }}</div>
+    </div>
+
+    <div class="filter-container">
+      <!-- IP Address Filter -->
+      <div class="filter-section">
+        <div class="filter-title">IP Address / CIDR Range</div>
+        <div class="search-input-wrapper">
+          <input type="text"
+                 class="filter-input"
+                 id="ipInput"
+                 placeholder="e.g., 192.168.1.1 or 192.168.1.x or 192.168.0.0/16"
+                 autocomplete="off">
+          <button class="clear-button" onclick="clearInput('ipInput')" title="Clear">×</button>
+        </div>
+        <small style="color: #666; display: block; margin-top: 5px;">
+          Exact IP, CIDR notation (max /16), or wildcards with "x" (e.g., 12.34.x.78)
+        </small>
+      </div>
+
+      <!-- URL Filter -->
+      <div class="filter-section">
+        <div class="filter-title">URL Pattern</div>
+        <div class="search-input-wrapper">
+          <input type="text"
+                 class="filter-input"
+                 id="urlInput"
+                 placeholder="e.g., example.com or /admin"
+                 autocomplete="off">
+          <button class="clear-button" onclick="clearInput('urlInput')" title="Clear">×</button>
+        </div>
+        <small style="color: #666; display: block; margin-top: 5px;">
+          Case-insensitive substring match
+        </small>
+      </div>
+
+      <!-- Body Search Filter -->
+      <div class="filter-section">
+        <div class="filter-title">Response Body Search</div>
+        <div class="search-input-wrapper">
+          <input type="text"
+                 class="filter-input"
+                 id="bodySearchInput"
+                 placeholder="Search in response body content..."
+                 maxlength="1000"
+                 autocomplete="off">
+          <button class="clear-button" onclick="clearInput('bodySearchInput')" title="Clear">×</button>
+        </div>
+        <small style="color: #666; display: block; margin-top: 5px;">
+          Full-text search in decoded response bodies (max 1000 chars)
+        </small>
+      </div>
+
+      <!-- HTTP Status Codes Filter -->
+      <div class="filter-section">
+        <div class="filter-title">HTTP Status Codes</div>
+        <div>
+          <button class="select-all-btn" onclick="toggleAllStatusCodes(true)">Select All</button>
+          <button class="select-all-btn" onclick="toggleAllStatusCodes(false)">Deselect All</button>
+        </div>
+        <div class="selected-items" id="selectedStatusCodes">
+          <div class="selected-items-label">Selected:</div>
+          <div id="selectedStatusCodesList"></div>
+        </div>
+        <div class="checkbox-list" id="statusCodeList">
+          <!-- 2xx Success -->
+          <div class="checkbox-item" data-name="200">
+            <input type="checkbox" id="status_200" value="200" checked onchange="updateSelectedDisplay(); updateCounter();">
+            <label for="status_200">200 - OK</label>
+          </div>
+          <div class="checkbox-item" data-name="201">
+            <input type="checkbox" id="status_201" value="201" onchange="updateSelectedDisplay(); updateCounter();">
+            <label for="status_201">201 - Created</label>
+          </div>
+          <div class="checkbox-item" data-name="204">
+            <input type="checkbox" id="status_204" value="204" onchange="updateSelectedDisplay(); updateCounter();">
+            <label for="status_204">204 - No Content</label>
+          </div>
+
+          <!-- 3xx Redirection -->
+          <div class="checkbox-item" data-name="301">
+            <input type="checkbox" id="status_301" value="301" onchange="updateSelectedDisplay(); updateCounter();">
+            <label for="status_301">301 - Moved Permanently</label>
+          </div>
+          <div class="checkbox-item" data-name="302">
+            <input type="checkbox" id="status_302" value="302" onchange="updateSelectedDisplay(); updateCounter();">
+            <label for="status_302">302 - Found</label>
+          </div>
+          <div class="checkbox-item" data-name="304">
+            <input type="checkbox" id="status_304" value="304" onchange="updateSelectedDisplay(); updateCounter();">
+            <label for="status_304">304 - Not Modified</label>
+          </div>
+          <div class="checkbox-item" data-name="307">
+            <input type="checkbox" id="status_307" value="307" onchange="updateSelectedDisplay(); updateCounter();">
+            <label for="status_307">307 - Temporary Redirect</label>
+          </div>
+          <div class="checkbox-item" data-name="308">
+            <input type="checkbox" id="status_308" value="308" onchange="updateSelectedDisplay(); updateCounter();">
+            <label for="status_308">308 - Permanent Redirect</label>
+          </div>
+
+          <!-- 4xx Client Errors -->
+          <div class="checkbox-item" data-name="400">
+            <input type="checkbox" id="status_400" value="400" onchange="updateSelectedDisplay(); updateCounter();">
+            <label for="status_400">400 - Bad Request</label>
+          </div>
+          <div class="checkbox-item" data-name="401">
+            <input type="checkbox" id="status_401" value="401" onchange="updateSelectedDisplay(); updateCounter();">
+            <label for="status_401">401 - Unauthorized</label>
+          </div>
+          <div class="checkbox-item" data-name="403">
+            <input type="checkbox" id="status_403" value="403" onchange="updateSelectedDisplay(); updateCounter();">
+            <label for="status_403">403 - Forbidden</label>
+          </div>
+          <div class="checkbox-item" data-name="404">
+            <input type="checkbox" id="status_404" value="404" onchange="updateSelectedDisplay(); updateCounter();">
+            <label for="status_404">404 - Not Found</label>
+          </div>
+          <div class="checkbox-item" data-name="405">
+            <input type="checkbox" id="status_405" value="405" onchange="updateSelectedDisplay(); updateCounter();">
+            <label for="status_405">405 - Method Not Allowed</label>
+          </div>
+          <div class="checkbox-item" data-name="429">
+            <input type="checkbox" id="status_429" value="429" onchange="updateSelectedDisplay(); updateCounter();">
+            <label for="status_429">429 - Too Many Requests</label>
+          </div>
+
+          <!-- 5xx Server Errors -->
+          <div class="checkbox-item" data-name="500">
+            <input type="checkbox" id="status_500" value="500" onchange="updateSelectedDisplay(); updateCounter();">
+            <label for="status_500">500 - Internal Server Error</label>
+          </div>
+          <div class="checkbox-item" data-name="502">
+            <input type="checkbox" id="status_502" value="502" onchange="updateSelectedDisplay(); updateCounter();">
+            <label for="status_502">502 - Bad Gateway</label>
+          </div>
+          <div class="checkbox-item" data-name="503">
+            <input type="checkbox" id="status_503" value="503" onchange="updateSelectedDisplay(); updateCounter();">
+            <label for="status_503">503 - Service Unavailable</label>
+          </div>
+          <div class="checkbox-item" data-name="504">
+            <input type="checkbox" id="status_504" value="504" onchange="updateSelectedDisplay(); updateCounter();">
+            <label for="status_504">504 - Gateway Timeout</label>
+          </div>
+        </div>
+      </div>
+
+      <!-- Detected Technologies Filter -->
+      <div class="filter-section">
+        <div class="filter-title">Detected Technologies</div>
+        <input type="text"
+               class="checkbox-search"
+               id="techSearch"
+               placeholder="Search technologies..."
+               autocomplete="off">
+        <div>
+          <button class="select-all-btn" onclick="toggleAllTech(true)">Select All</button>
+          <button class="select-all-btn" onclick="toggleAllTech(false)">Deselect All</button>
+        </div>
+        <div class="selected-items" id="selectedTech">
+          <div class="selected-items-label">Selected:</div>
+          <div id="selectedTechList"></div>
+        </div>
+        <div class="checkbox-list" id="techList">
+          {% if all_technologies %}
+            {% for tech in all_technologies %}
+            <div class="checkbox-item" data-name="{{ tech|lower }}">
+              <input type="checkbox"
+                     id="tech_{{ loop.index }}"
+                     value="{{ tech }}"
+                     onchange="updateSelectedDisplay(); updateCounter();">
+              <label for="tech_{{ loop.index }}">{{ tech }}</label>
+            </div>
+            {% endfor %}
+          {% else %}
+            <div style="padding: 10px; color: #999; text-align: center;">No technologies found</div>
+          {% endif %}
+        </div>
+      </div>
+
+      <!-- Labels Filter -->
+      <div class="filter-section">
+        <div class="filter-title">Labels</div>
+        <input type="text"
+               class="checkbox-search"
+               id="labelSearch"
+               placeholder="Search labels..."
+               autocomplete="off">
+        <div>
+          <button class="select-all-btn" onclick="toggleAllLabels(true)">Select All</button>
+          <button class="select-all-btn" onclick="toggleAllLabels(false)">Deselect All</button>
+        </div>
+        <div class="selected-items" id="selectedLabels">
+          <div class="selected-items-label">Selected:</div>
+          <div id="selectedLabelsList"></div>
+        </div>
+        <div class="checkbox-list" id="labelList">
+          {% if all_labels %}
+            {% for label in all_labels %}
+            <div class="checkbox-item" data-name="{{ label|lower }}">
+              <input type="checkbox"
+                     id="label_{{ loop.index }}"
+                     value="{{ label }}"
+                     onchange="updateSelectedDisplay(); updateCounter();">
+              <label for="label_{{ loop.index }}">{{ label }}</label>
+            </div>
+            {% endfor %}
+          {% else %}
+            <div style="padding: 10px; color: #999; text-align: center;">No labels found</div>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // Global state for pagination
+    let currentPage = 1;
+    let totalPages = 1;
+
+    // Debounce function to limit API calls
+    let debounceTimer;
+    function debounce(func, delay) {
+      clearTimeout(debounceTimer);
+      debounceTimer = setTimeout(func, delay);
+    }
+
+    // Get current filter values
+    function getFilterPayload() {
+      const ipValue = document.getElementById('ipInput').value.trim();
+      const urlValue = document.getElementById('urlInput').value.trim();
+      const bodySearchValue = document.getElementById('bodySearchInput').value.trim();
+      const techCheckboxes = document.querySelectorAll('#techList input[type="checkbox"]:checked');
+      const technologies = Array.from(techCheckboxes).map(cb => cb.value);
+      const labelCheckboxes = document.querySelectorAll('#labelList input[type="checkbox"]:checked');
+      const labels = Array.from(labelCheckboxes).map(cb => cb.value);
+      const statusCodeCheckboxes = document.querySelectorAll('#statusCodeList input[type="checkbox"]:checked');
+      const statusCodes = Array.from(statusCodeCheckboxes).map(cb => cb.value);
+
+      return {
+        ip: ipValue,
+        url: urlValue,
+        body_search: bodySearchValue,
+        technologies: technologies,
+        include_labels: labels,
+        status_codes: statusCodes,
+        protocol_filter: 'both'
+      };
+    }
+
+    // Update counter with current filter values
+    function updateCounter() {
+      debounce(async () => {
+        const loading = document.getElementById('loading');
+        loading.classList.add('active');
+
+        try {
+          const payload = getFilterPayload();
+
+          // Call API
+          const response = await fetch('/api/count', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json'
+            },
+            body: JSON.stringify(payload)
+          });
+
+          const data = await response.json();
+
+          // Update counter
+          const counter = document.getElementById('urlCounter');
+          counter.textContent = data.count.toLocaleString();
+
+          // Animate counter
+          counter.style.transform = 'scale(1.1)';
+          setTimeout(() => {
+            counter.style.transform = 'scale(1)';
+          }, 200);
+
+        } catch (error) {
+          console.error('Error updating counter:', error);
+          document.getElementById('urlCounter').textContent = 'Error';
+        } finally {
+          loading.classList.remove('active');
+        }
+      }, 300); // 300ms delay
+    }
+
+    // Show URLs in modal
+    async function showUrls() {
+      const modal = document.getElementById('urlsModal');
+      modal.classList.add('show');
+      currentPage = 1;
+      await loadPage(1);
+    }
+
+    // Load specific page of URLs
+    async function loadPage(page) {
+      const loading = document.getElementById('loading');
+      loading.classList.add('active');
+
+      try {
+        const payload = getFilterPayload();
+        payload.page = page;
+        payload.per_page = 100;
+
+        const response = await fetch('/api/urls', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify(payload)
+        });
+
+        const data = await response.json();
+
+        // Update current page and total pages
+        currentPage = data.page;
+        totalPages = data.total_pages;
+
+        // Update table
+        const tbody = document.getElementById('urlsTableBody');
+        if (data.urls && data.urls.length > 0) {
+          tbody.innerHTML = data.urls.map(item => {
+            const statusClass = item.status_code >= 200 && item.status_code < 300 ? 'status-2xx' :
+                               item.status_code >= 300 && item.status_code < 400 ? 'status-3xx' :
+                               item.status_code >= 400 && item.status_code < 500 ? 'status-4xx' :
+                               item.status_code >= 500 ? 'status-5xx' : '';
+
+            return `
+              <tr>
+                <td>${item.ip || '-'}</td>
+                <td><span class="status-code ${statusClass}">${item.status_code || '-'}</span></td>
+                <td><a href="/details/${item.id}" class="url-link" target="_blank">${item.url}</a></td>
+              </tr>
+            `;
+          }).join('');
+        } else {
+          tbody.innerHTML = '<tr><td colspan="3" style="text-align: center; padding: 40px; color: #999;">No URLs found</td></tr>';
+        }
+
+        // Update pagination
+        document.getElementById('paginationInfo').textContent =
+          `Page ${currentPage} of ${totalPages} (${data.total_count.toLocaleString()} total)`;
+        document.getElementById('prevPage').disabled = currentPage <= 1;
+        document.getElementById('nextPage').disabled = currentPage >= totalPages;
+
+      } catch (error) {
+        console.error('Error loading URLs:', error);
+        document.getElementById('urlsTableBody').innerHTML =
+          '<tr><td colspan="3" style="text-align: center; padding: 40px; color: #dc3545;">Error loading URLs</td></tr>';
+      } finally {
+        loading.classList.remove('active');
+      }
+    }
+
+    // Download URLs
+    async function downloadUrls() {
+      const loading = document.getElementById('loading');
+      loading.classList.add('active');
+
+      try {
+        const payload = getFilterPayload();
+        payload.domains_only = document.getElementById('domainsOnlyCheckbox').checked;
+
+        const response = await fetch('/api/download-urls', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify(payload)
+        });
+
+        if (!response.ok) {
+          throw new Error('Download failed');
+        }
+
+        // Get the blob from response
+        const blob = await response.blob();
+
+        // Get filename from Content-Disposition header or use default
+        const contentDisposition = response.headers.get('Content-Disposition');
+        let filename = 'urls.txt';
+        if (contentDisposition) {
+          const match = contentDisposition.match(/filename=(.+)/);
+          if (match) {
+            filename = match[1];
+          }
+        }
+
+        // Create download link
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = filename;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        window.URL.revokeObjectURL(url);
+
+      } catch (error) {
+        console.error('Error downloading URLs:', error);
+        alert('Error downloading file. Please try again.');
+      } finally {
+        loading.classList.remove('active');
+      }
+    }
+
+    // Close modal
+    function closeModal() {
+      document.getElementById('urlsModal').classList.remove('show');
+    }
+
+    // Close modal when clicking outside
+    window.onclick = function(event) {
+      const modal = document.getElementById('urlsModal');
+      if (event.target == modal) {
+        modal.classList.remove('show');
+      }
+    }
+
+    // Clear input field
+    function clearInput(inputId) {
+      document.getElementById(inputId).value = '';
+      updateCounter();
+    }
+
+    // Update selected items display
+    function updateSelectedDisplay() {
+      // Update status codes
+      const statusCodeCheckboxes = document.querySelectorAll('#statusCodeList input[type="checkbox"]:checked');
+      const statusCodeContainer = document.getElementById('selectedStatusCodes');
+      const statusCodeList = document.getElementById('selectedStatusCodesList');
+
+      if (statusCodeCheckboxes.length > 0) {
+        statusCodeContainer.classList.add('has-items');
+        statusCodeList.innerHTML = Array.from(statusCodeCheckboxes).map(cb => {
+          return `<span class="selected-item-badge">
+            ${cb.value}
+            <span class="remove" onclick="toggleCheckbox('${cb.id}')" title="Remove">×</span>
+          </span>`;
+        }).join('');
+      } else {
+        statusCodeContainer.classList.remove('has-items');
+        statusCodeList.innerHTML = '';
+      }
+
+      // Update technologies
+      const techCheckboxes = document.querySelectorAll('#techList input[type="checkbox"]:checked');
+      const techContainer = document.getElementById('selectedTech');
+      const techList = document.getElementById('selectedTechList');
+
+      if (techCheckboxes.length > 0) {
+        techContainer.classList.add('has-items');
+        techList.innerHTML = Array.from(techCheckboxes).map(cb => {
+          return `<span class="selected-item-badge">
+            ${cb.value}
+            <span class="remove" onclick="toggleCheckbox('${cb.id}')" title="Remove">×</span>
+          </span>`;
+        }).join('');
+      } else {
+        techContainer.classList.remove('has-items');
+        techList.innerHTML = '';
+      }
+
+      // Update labels
+      const labelCheckboxes = document.querySelectorAll('#labelList input[type="checkbox"]:checked');
+      const labelContainer = document.getElementById('selectedLabels');
+      const labelList = document.getElementById('selectedLabelsList');
+
+      if (labelCheckboxes.length > 0) {
+        labelContainer.classList.add('has-items');
+        labelList.innerHTML = Array.from(labelCheckboxes).map(cb => {
+          return `<span class="selected-item-badge">
+            ${cb.value}
+            <span class="remove" onclick="toggleCheckbox('${cb.id}')" title="Remove">×</span>
+          </span>`;
+        }).join('');
+      } else {
+        labelContainer.classList.remove('has-items');
+        labelList.innerHTML = '';
+      }
+    }
+
+    // Toggle checkbox by ID
+    function toggleCheckbox(checkboxId) {
+      const checkbox = document.getElementById(checkboxId);
+      if (checkbox) {
+        checkbox.checked = !checkbox.checked;
+        updateSelectedDisplay();
+        updateCounter();
+      }
+    }
+
+    // Toggle all technologies
+    function toggleAllTech(select) {
+      const checkboxes = document.querySelectorAll('#techList input[type="checkbox"]');
+      checkboxes.forEach(cb => {
+        if (!cb.closest('.checkbox-item').style.display || cb.closest('.checkbox-item').style.display !== 'none') {
+          cb.checked = select;
+        }
+      });
+      updateSelectedDisplay();
+      updateCounter();
+    }
+
+    // Toggle all labels
+    function toggleAllLabels(select) {
+      const checkboxes = document.querySelectorAll('#labelList input[type="checkbox"]');
+      checkboxes.forEach(cb => {
+        if (!cb.closest('.checkbox-item').style.display || cb.closest('.checkbox-item').style.display !== 'none') {
+          cb.checked = select;
+        }
+      });
+      updateSelectedDisplay();
+      updateCounter();
+    }
+
+    // Toggle all status codes
+    function toggleAllStatusCodes(select) {
+      const checkboxes = document.querySelectorAll('#statusCodeList input[type="checkbox"]');
+      checkboxes.forEach(cb => {
+        cb.checked = select;
+      });
+      updateSelectedDisplay();
+      updateCounter();
+    }
+
+    // Filter checkboxes by search
+    function filterCheckboxes(searchInputId, listId) {
+      const searchValue = document.getElementById(searchInputId).value.toLowerCase();
+      const items = document.querySelectorAll(`#${listId} .checkbox-item`);
+
+      items.forEach(item => {
+        const name = item.getAttribute('data-name');
+        if (name.includes(searchValue)) {
+          item.style.display = '';
+        } else {
+          item.style.display = 'none';
+        }
+      });
+    }
+
+    // Event listeners for inputs
+    document.getElementById('ipInput').addEventListener('input', () => updateCounter());
+    document.getElementById('urlInput').addEventListener('input', () => updateCounter());
+    document.getElementById('bodySearchInput').addEventListener('input', () => updateCounter());
+    document.getElementById('techSearch').addEventListener('input', () => filterCheckboxes('techSearch', 'techList'));
+    document.getElementById('labelSearch').addEventListener('input', () => filterCheckboxes('labelSearch', 'labelList'));
+
+    // Initialize selected displays on page load
+    updateSelectedDisplay();
+  </script>
+</body>
+</html>

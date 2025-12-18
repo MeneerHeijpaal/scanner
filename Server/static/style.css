@@ -1,0 +1,236 @@
+table {
+  border-collapse: collapse;
+  width: 100%;
+}
+th, td {
+  border: 1px solid #ddd;
+  padding: 8px;
+}
+tr:nth-child(even) {background-color: #f9f9f9;}
+tr:hover {background-color: #f1f1f1; cursor: pointer;}
+th {
+  padding-top: 12px;
+  padding-bottom: 12px;
+  background-color: #4CAF50;
+  color: white;
+  text-align: left;
+}
+
+/* Details page card layout styles moved from inline template */
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+  margin: 0;
+  padding: 0;
+  background-color: #f5f5f5;
+  box-sizing: border-box;
+}
+.details-grid {
+  /* make the grid span the full viewport width while keeping inner gutters */
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+  gap: 20px;
+  padding: 20px;
+  width: 100vw;
+  max-width: 100vw;
+  /* pull the grid to the viewport edges even when inside a centered parent */
+  margin-left: calc(50% - 50vw);
+  margin-right: calc(50% - 50vw);
+  box-sizing: border-box;
+}
+.details-card {
+  background: #fff;
+  border-radius: 10px;
+  box-shadow: 0 8px 24px rgba(0,0,0,0.06);
+  padding: 18px;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+}
+.card-title {
+  font-size: 1.05rem;
+  font-weight: 600;
+  margin-bottom: 8px;
+  color: #333;
+}
+.field-label {
+  display: inline-block;
+  background: rgba(0,102,204,0.08);
+  color: #0056a3;
+  border: 1px solid rgba(0,102,204,0.12);
+  padding: 4px 8px;
+  border-radius: 6px;
+  font-weight: 600;
+  font-size: 0.78rem;
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+  margin-bottom: 8px;
+}
+.field-value { white-space: pre-wrap; font-family: 'Courier New', monospace; font-size: 0.9rem; color: #333; margin-bottom: 10px; }
+.field-value a { text-decoration: none; }
+.field-value a:hover { text-decoration: underline; }
+
+/* Hash label badge */
+.hash-label-badge {
+  display: inline-block;
+  padding: 3px 8px;
+  background: #007bde;
+  color: white;
+  border-radius: 3px;
+  font-size: 0.65rem;
+  font-weight: 500;
+}
+
+/* External links and match count - same gray color */
+.external-link, .match-count { color: #666; }
+.external-link:hover, .match-count:hover { color: #333; }
+
+/* Ensure inline code/hash values wrap and do not overflow their card */
+.field-value code, .details-card code {
+  white-space: normal;
+  word-break: break-all;
+  overflow-wrap: anywhere;
+  display: inline-block;
+  max-width: 100%;
+}
+.decoded-section { background-color: #fffbea; border-left: 4px solid #ff9800; margin-top: 10px; padding: 10px; }
+.decoded-content { background-color: white; padding: 10px; border-radius: 3px; border: 1px solid #ffcc99; font-family: 'Courier New', monospace; font-size: 0.9em; overflow-x: auto; white-space: pre-wrap; max-height: 400px; overflow-y: auto; word-break: break-word; overflow-wrap: anywhere; }
+.field-section { margin: 8px 0; padding: 8px; background-color: #f9f9f9; border-left: 4px solid #0066cc; border-radius: 6px; }
+.back-link { color: #0066cc; display: inline-block; margin: 10px 0; }
+
+.page-title { padding: 0 20px; margin-top: 8px; font-size: 1.35rem; color: #222; }
+.page-bottom-link { display: block; padding: 0 20px; margin-top: 12px; }
+
+/* Make a card span the full width of the grid */
+.details-card.full-width {
+  grid-column: 1 / -1;
+}
+
+/* Raw links list inside Raw Data card */
+.raw-links { list-style: none; padding-left: 0; margin: 6px 0; }
+.raw-links li { margin: 8px 0; }
+.raw-links a { color: #0066cc; text-decoration: none; font-weight: 600; }
+.raw-links a:hover { text-decoration: underline; }
+
+/* Container used to center content with gutters */
+.details-container {
+  /* full-bleed container: spans entire browser width */
+  width: 100%;
+  max-width: none;
+  margin: 0;
+  padding: 0; /* inner gutters are provided by .details-grid */
+  background-color: white;
+  border-radius: 0;
+  box-shadow: none;
+  box-sizing: border-box;
+}
+
+/* Inner centered panel with padding and subtle shadow: keeps full-bleed outer container
+   while showing a card-like inner surface that provides gutters and a soft shadow. */
+.details-inner {
+  max-width: none;
+  width: 100%;
+  margin: 18px auto;
+  background: #ffffff;
+  border-radius: 10px;
+  box-shadow: 0 8px 24px rgba(0,0,0,0.06);
+  padding: 18px;
+  box-sizing: border-box;
+}
+
+@media (max-width: 640px) {
+  .details-inner {
+    margin: 10px;
+    padding: 12px;
+    border-radius: 6px;
+  }
+}
+
+/* two-column helper reused in template */
+.two-column {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 20px;
+  width: 100%;
+}
+@media (max-width: 768px) {
+  .two-column { grid-template-columns: 1fr; }
+}
+
+/* Search form helpers (moved from inline attributes in index.html) */
+.search-form input[type="text"],
+.search-form input[type="search"] {
+  width: 100%;
+  box-sizing: border-box;
+}
+.search-actions { margin-top: 12px; }
+
+.header-fields {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+  gap: 15px;
+}
+
+/* Ensure object blocks (headers, JSON, etc.) wrap and don't overflow their card */
+.object-value {
+  background-color: #f0f0f0;
+  padding: 10px;
+  border-radius: 4px;
+  border: 1px solid #ddd;
+  overflow-x: auto;
+  max-width: 100%;
+  box-sizing: border-box;
+  word-break: break-word;
+  overflow-wrap: anywhere;
+  /* collapse multiple whitespaces and line breaks visually */
+  white-space: normal;
+}
+
+/* Ensure array blocks (lists, arrays) also wrap and do not overflow their card */
+.array-value {
+  background-color: #f8f9f9;
+  padding: 10px;
+  border-radius: 4px;
+  border: 1px solid #ddd;
+  overflow-x: auto;
+  max-width: 100%;
+  box-sizing: border-box;
+  word-break: break-word;
+  overflow-wrap: anywhere;
+  /* keep items readable and allow wrapping for long tokens */
+  white-space: normal;
+}
+
+/* Response headers should span full width and be easily readable */
+.details-card.headers-full {
+  grid-column: 1 / -1;
+}
+
+/* copy button next to links */
+.copy-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  margin-left: 8px;
+  width: 22px;
+  height: 22px;
+  border-radius: 4px;
+  background: #eef6ff;
+  border: 1px solid #cfe3ff;
+  cursor: pointer;
+}
+.copy-btn svg { width: 14px; height: 14px; fill: #0066cc; }
+.copy-btn:active { transform: translateY(1px); }
+.copy-status { font-size: 0.85rem; color: #666; margin-left: 8px; }
+
+/* Knowledge base spacing (moved from inline style in template) */
+.knowledgebase { margin-top: 10px; }
+
+/* inline alert previously used in index.html */
+.alert-inline {
+  background: #fff3cd;
+  border-left: 4px solid #ffeeba;
+  padding: 10px;
+  margin: 12px 0;
+  border-radius: 4px;
+  color: #856404;
+}
