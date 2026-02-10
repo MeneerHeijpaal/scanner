@@ -294,8 +294,8 @@ def main():
     parser = argparse.ArgumentParser(description="Import httpx JSON output to MongoDB")
     parser.add_argument("-f", "--file", required=True, help="Path to the httpx JSON file")
     parser.add_argument("--mongo-uri", default="mongodb://localhost:27017", help="MongoDB URI")
-    parser.add_argument("--db", default="httpx", help="Database name")
-    parser.add_argument("--collection", default="results", help="Collection name")
+    parser.add_argument("--db", default="urls", help="Database name")
+    parser.add_argument("--collection", default="data", help="Collection name")
     parser.add_argument("--no-elasticsearch", action="store_true", help="Disable Elasticsearch indexing")
     args = parser.parse_args()
 
@@ -545,4 +545,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
