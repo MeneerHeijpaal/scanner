@@ -1,0 +1,32 @@
+id: wordpress-detect
+
+info:
+  name: WordPress Detection
+  author: scanner
+  severity: info
+  description: Detects whether a target is running WordPress. Used as the gate in
+    the tech-conditional workflow so WordPress templates only run against WordPress.
+  tags: tech,wordpress
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}"
+      - "{{BaseURL}}/wp-login.php"
+    stop-at-first-match: true
+    matchers-condition: or
+    matchers:
+      - type: word
+        name: wordpress
+        part: body
+        words:
+          - "/wp-content/"
+          - "/wp-includes/"
+          - "wp-login"
+          - "wp-embed.min.js"
+        condition: or
+      - type: word
+        name: wordpress
+        part: header
+        words:
+          - "wp-"
