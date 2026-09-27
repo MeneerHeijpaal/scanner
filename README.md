@@ -5,52 +5,68 @@ A powerful web-based HTTP reconnaissance tool that combines httpx scanning with 
 ## Features
 
 - **Standalone**: Just clone this repository and follow the setup (no files in ~/, /etc, /opt.. etc)
-- **Fast Body Search**: Search response body content in <1 second (Elasticsearch-powered, 30-100x faster than regex)
-- **Advanced Filtering**: IP/URL patterns, CIDR notation, wildcard matching (e.g., `192.168.x.1`)
+- **Fast Body Search**: Search response body content in <1 second (Elasticsearch-powered)
+- **Single Store**: Elasticsearch is the one runtime data store — all filters, counts, sorting and pagination run as a single query (no MongoDB at runtime)
+- **Advanced Filtering**: IP/URL patterns, CIDR notation (native), wildcard matching (e.g., `192.168.x.1`)
 - **Technology Detection**: Filter by detected web technologies (Apache, nginx, WordPress, etc.)
-- **Hash Labeling**: Tag and categorize responses using SHA256 hashes
+- **Hash Labeling**: Tag and categorize responses using SHA256 hashes (stored in local SQLite)
 - **HTTP Status Filtering**: Filter by response codes (200, 301, 404, etc.)
 - **Export Capabilities**: Download URLs, domains, raw responses, and headers
 - **Live Counter**: Real-time result count updates as you filter
-- **Graceful Fallback**: Works without Elasticsearch (uses MongoDB regex, slower but functional)
+- **Idempotent Import**: Records are keyed by URL, so re-importing a URL updates it in place
 
 ## Architecture
 
 ```
 Scanner/
-├── Python/                      # Scanner and import scripts
+├── Python/                      # Scanners and import scripts
 │   ├── scanner.py               # httpx scanner wrapper
-│   ├── import_httpx.py          # Import scan results to MongoDB
-│   └── migrate_to_elasticsearch.py  # Index existing data in Elasticsearch
+│   ├── import_httpx.py          # Import httpx results into Elasticsearch
+│   ├── naabu_scan.py            # naabu port scanner wrapper
+│   ├── import_naabu.py          # Import naabu results into Elasticsearch
+│   ├── nuclei_scan.py           # nuclei enrichment (workflow / tech-aware)
+│   ├── import_nuclei.py         # Import nuclei findings into Elasticsearch
+│   ├── distribute_targets.py    # Shard a target list across VPS workers
+│   └── migrate_to_elasticsearch.py  # One-off: legacy MongoDB -> Elasticsearch
 ├── Server/                      # Flask web application
 │   ├── server.py                # Main application entry point
 │   ├── config.yml               # Configuration file
 │   ├── routes.py                # HTTP route handlers
-│   ├── utils.py                 # Utility functions
-│   ├── elasticsearch_manager.py # Elasticsearch integration
-│   ├── templates/               # HTML templates
-│   ├── static/                  # CSS and static assets
-│   └── labels/                  # SQLite labels database (Some hashes of httpx are already in the database)
-├── bin/                         # Location for the binaries
-├── Database/                    # Location for the MongoDB Database
-├── Elastic_Data/                # Location for the Elastic Search Database
+│   ├── utils.py                 # Utility functions + ES query builder
+│   ├── elasticsearch_manager.py # Elasticsearch data store
+│   ├── templates/ static/       # HTML templates and assets
+│   └── labels/                  # SQLite labels database
+├── nuclei-workflows/            # nuclei tech-conditional workflow + detections
+├── terraform/                   # Hetzner multi-VPS provisioning
+├── Documentation/               # Component + architecture docs
+├── bin/                         # Location for the binaries (httpx/naabu/nuclei)
+├── Elastic_Data/                # Elasticsearch data directory
 ├── httpx-config.yaml            # httpx scanner configuration
+├── ports.conf                   # naabu ports to scan
+├── nuclei.yaml                  # nuclei per-VPS settings
+├── interactsh.config            # self-hosted Interactsh server
 ├── docker-compose.yml           # Elasticsearch Docker configuration
 └── requirements.txt             # Python dependencies
 ```
+
+See [`Documentation/`](Documentation/) for full details on each component and the
+overall architecture. The scan pipeline is: **httpx** (probe) → **naabu** (ports)
+→ **nuclei** (tech-conditional enrichment, with **Interactsh** for out-of-band
+detection), all stored in **Elasticsearch**, and optionally spread across
+multiple **Hetzner** VPSes via Terraform.
 
 ## Prerequisites
 
 ### Required
 
 - **Python 3.8+**
-- **MongoDB 4.4+** ([Download for your platform](https://www.mongodb.com/try/download/community))
+- **Elasticsearch 8.x** (the primary and only runtime data store)
 - **httpx** binary ([Download releases](https://github.com/projectdiscovery/httpx/releases))
-- **Docker** (for Elasticsearch - optional but recommended)
+- **Docker** (recommended, for running Elasticsearch)
 
 ### Optional
 
-- **Elasticsearch 8.x** (for fast body search)
+- **MongoDB 4.4+** — only needed to migrate legacy data into Elasticsearch via `Python/migrate_to_elasticsearch.py`. Not used at runtime.
 
 ### System Requirements
 
@@ -195,8 +211,11 @@ python3 Python/scanner.py -f urls.txt -o results.json
 ### 4. Import Scan Results
 
 ```bash
-python3 Python/import_httpx.py -f results.json --db urls --collection data
+python3 Python/import_httpx.py -f results.json
 ```
+
+Records are indexed directly into Elasticsearch and keyed by URL, so re-importing
+the same URL updates the existing record.
 
 ### 5. Start Web Interface
 

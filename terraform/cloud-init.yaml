@@ -1,0 +1,50 @@
+#cloud-config
+# Provisioning for a scanner worker VPS. Installs the ProjectDiscovery tools,
+# clones the repository, and writes a small env file describing this worker and
+# where it should ingest results.
+
+package_update: true
+package_upgrade: false
+
+packages:
+  - git
+  - python3
+  - python3-pip
+  - python3-venv
+  - build-essential
+  - libpcap-dev   # required by naabu (SYN scanning)
+  - golang-go
+  - jq
+
+write_files:
+  - path: /etc/scanner/worker.env
+    permissions: "0644"
+    content: |
+      WORKER_INDEX=${worker_index}
+      WORKER_COUNT=${worker_count}
+      ES_ENDPOINT=${es_endpoint}
+      INTERACTSH_SERVER=${interactsh_server}
+
+runcmd:
+  # Install ProjectDiscovery tools into /usr/local/bin.
+  - export GOBIN=/usr/local/bin
+  - export HOME=/root
+  - go install -v github.com/projectdiscovery/httpx/cmd/httpx@latest
+  - go install -v github.com/projectdiscovery/naabu/v2/cmd/naabu@latest
+  - go install -v github.com/projectdiscovery/nuclei/v3/cmd/nuclei@latest
+  # Fetch the nuclei template collection.
+  - /usr/local/bin/nuclei -update-templates -disable-update-check || true
+  # Clone the scanner repository and install Python dependencies.
+  - git clone ${repo_url} /opt/scanner || (cd /opt/scanner && git pull)
+  - python3 -m venv /opt/scanner/.venv
+  - /opt/scanner/.venv/bin/pip install --upgrade pip
+  - /opt/scanner/.venv/bin/pip install -r /opt/scanner/requirements.txt
+  # Point config at the central Elasticsearch endpoint if provided.
+  - |
+    if [ -n "${es_endpoint}" ]; then
+      ES_HOST=$(echo "${es_endpoint}" | cut -d: -f1)
+      ES_PORT=$(echo "${es_endpoint}" | cut -d: -f2)
+      echo "export ES_HOST=$ES_HOST"  >> /etc/scanner/worker.env
+      echo "export ES_PORT=$${ES_PORT:-9200}" >> /etc/scanner/worker.env
+    fi
+  - echo "scanner worker ${worker_index}/${worker_count} provisioned" > /var/log/scanner-init.done
