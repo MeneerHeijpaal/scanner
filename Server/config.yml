@@ -25,23 +25,10 @@ flask:
   # Server port
   port: 8001
 
-# MongoDB Configuration
-mongodb:
-  # MongoDB connection URI (can be overridden by MONGO_URI environment variable)
-  uri: "mongodb://localhost:27017/"
-
-  # Database name (can be overridden by DB_NAME environment variable)
-  database: "urls"
-
-  # Collection name (can be overridden by COLLECTION_NAME environment variable)
-  collection: "data"
-
-  # Connection timeout in milliseconds
-  timeout: 5000
-
 # Elasticsearch Configuration
+# Elasticsearch is the primary (and only) runtime data store for scan records.
 elasticsearch:
-  # Enable/disable Elasticsearch integration
+  # Enable/disable Elasticsearch. Must be true; the app requires Elasticsearch.
   enabled: true
 
   # Elasticsearch host (can be overridden by ES_HOST environment variable)
@@ -50,8 +37,8 @@ elasticsearch:
   # Elasticsearch port (can be overridden by ES_PORT environment variable)
   port: 9200
 
-  # Index name for storing body content
-  index_name: "scanner_bodies"
+  # Index name for the full scan record (can be overridden by ES_INDEX)
+  index_name: "scanner_records"
 
   # Connection timeout in seconds
   timeout: 30
@@ -64,6 +51,22 @@ elasticsearch:
 
   # Number of replicas for the index
   number_of_replicas: 0
+
+  # Maximum hits returned in a single search page (index.max_result_window)
+  max_result_window: 100000
+
+  # Maximum decoded-body length (characters) indexed for full-text body search
+  max_body_index_chars: 2000000
+
+# MongoDB Configuration (legacy)
+# MongoDB is no longer used at runtime. These settings are read ONLY by the
+# one-off migration script Python/migrate_to_elasticsearch.py, which copies
+# legacy MongoDB data into the Elasticsearch index above.
+mongodb:
+  uri: "mongodb://localhost:27017/"
+  database: "urls"
+  collection: "data"
+  timeout: 5000
 
 # Input Validation Constants
 validation:
@@ -117,24 +120,5 @@ paths:
   # Database schema file
   schema_file: "schema.sql"
 
-# MongoDB Indexes
-indexes:
-  - field: "hash.body_sha256"
-    name: "idx_hash_body_sha256"
-    order: 1
-
-  - field: "hash.header_sha256"
-    name: "idx_hash_header_sha256"
-    order: 1
-
-  - field: "ip"
-    name: "idx_ip"
-    order: 1
-
-  - field: "host"
-    name: "idx_host"
-    order: 1
-
-  - field: "url"
-    name: "idx_url"
-    order: 1
+# Note: MongoDB field indexes are no longer used. Query performance is handled by
+# the Elasticsearch mapping defined in Server/elasticsearch_manager.py.
