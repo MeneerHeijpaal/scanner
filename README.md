@@ -5,14 +5,15 @@ A powerful web-based HTTP reconnaissance tool that combines httpx scanning with 
 ## Features
 
 - **Standalone**: Just clone this repository and follow the setup (no files in ~/, /etc, /opt.. etc)
-- **Fast Body Search**: Search response body content in <1 second (Elasticsearch-powered, 30-100x faster than regex)
-- **Advanced Filtering**: IP/URL patterns, CIDR notation, wildcard matching (e.g., `192.168.x.1`)
+- **Fast Body Search**: Search response body content in <1 second (Elasticsearch-powered)
+- **Single Store**: Elasticsearch is the one runtime data store — all filters, counts, sorting and pagination run as a single query (no MongoDB at runtime)
+- **Advanced Filtering**: IP/URL patterns, CIDR notation (native), wildcard matching (e.g., `192.168.x.1`)
 - **Technology Detection**: Filter by detected web technologies (Apache, nginx, WordPress, etc.)
-- **Hash Labeling**: Tag and categorize responses using SHA256 hashes
+- **Hash Labeling**: Tag and categorize responses using SHA256 hashes (stored in local SQLite)
 - **HTTP Status Filtering**: Filter by response codes (200, 301, 404, etc.)
 - **Export Capabilities**: Download URLs, domains, raw responses, and headers
 - **Live Counter**: Real-time result count updates as you filter
-- **Graceful Fallback**: Works without Elasticsearch (uses MongoDB regex, slower but functional)
+- **Idempotent Import**: Records are keyed by URL, so re-importing a URL updates it in place
 
 ## Architecture
 
@@ -44,13 +45,13 @@ Scanner/
 ### Required
 
 - **Python 3.8+**
-- **MongoDB 4.4+** ([Download for your platform](https://www.mongodb.com/try/download/community))
+- **Elasticsearch 8.x** (the primary and only runtime data store)
 - **httpx** binary ([Download releases](https://github.com/projectdiscovery/httpx/releases))
-- **Docker** (for Elasticsearch - optional but recommended)
+- **Docker** (recommended, for running Elasticsearch)
 
 ### Optional
 
-- **Elasticsearch 8.x** (for fast body search)
+- **MongoDB 4.4+** — only needed to migrate legacy data into Elasticsearch via `Python/migrate_to_elasticsearch.py`. Not used at runtime.
 
 ### System Requirements
 
@@ -195,8 +196,11 @@ python3 Python/scanner.py -f urls.txt -o results.json
 ### 4. Import Scan Results
 
 ```bash
-python3 Python/import_httpx.py -f results.json --db urls --collection data
+python3 Python/import_httpx.py -f results.json
 ```
+
+Records are indexed directly into Elasticsearch and keyed by URL, so re-importing
+the same URL updates the existing record.
 
 ### 5. Start Web Interface
 

@@ -1,53 +1,82 @@
 """
 Elasticsearch Manager Module
 
-This module provides Elasticsearch integration for the Scanner application,
-enabling fast full-text search on response body content.
+This module provides the primary Elasticsearch data store for the Scanner
+application. As of the MongoDB -> Elasticsearch migration, Elasticsearch is the
+single store for all httpx scan records (and, later, naabu/nuclei enrichment).
+MongoDB is no longer used at runtime; it survives only in the one-off migration
+script (Python/migrate_to_elasticsearch.py) that copies legacy data across.
 
-Architecture:
-- Elasticsearch stores only body_decoded content and document IDs for search
-- MongoDB remains the primary data store for all other fields
-- Search queries route through Elasticsearch, then fetch full docs from MongoDB
+Design:
+- One index (``elasticsearch.index_name``, default ``scanner_records``) holds the
+  full record. Fields are mapped for the exact queries the UI performs:
+    * ``ip`` (wildcard string) + ``ip_addr`` (ip type)  -> exact / prefix / CIDR / wildcard
+    * ``host`` (wildcard)                               -> hostname / partial
+    * ``url`` / ``redirect_location`` (wildcard)        -> substring search
+    * ``scheme`` (keyword)                              -> protocol filter
+    * ``tech`` (keyword[])                              -> facet + filter
+    * ``status_code`` (integer)                         -> filter
+    * ``hash.body_sha256`` / ``hash.header_sha256``     -> exact term
+    * ``body_decoded`` (text)                           -> match_phrase body search
+    * ``body`` / ``raw_header`` / ``request``           -> stored, not indexed
+- Document ``_id`` is derived from the URL (sha1) so re-importing a URL updates
+  the record in place instead of creating duplicates.
 
 Classes:
-    ElasticsearchManager: Manages Elasticsearch connection, indexing, and search
+    ElasticsearchManager: connection, index management, indexing, and search.
 """
 
+import hashlib
 import logging
-from typing import List, Dict, Optional, Any
+from typing import Any, Dict, Iterable, List, Optional, Tuple
+
 from elasticsearch import Elasticsearch, helpers
 from elasticsearch.exceptions import ConnectionError as ESConnectionError
+from elasticsearch.exceptions import NotFoundError
 
 logger = logging.getLogger(__name__)
 
+# Fields decoded from base64 for display / download. Stored in _source but not indexed.
+STORED_ONLY_FIELDS = ["body", "raw_header", "request"]
+
+
+def doc_id_for(record: Dict[str, Any]) -> str:
+    """Return a stable document id for a record.
+
+    Keyed on the URL so re-importing the same URL updates in place. Falls back to
+    a hash of the whole record when no URL is present.
+
+    Examples:
+        {"url": "https://example.com"} -> "sha1 of the url"
+        {"ip": "1.1.1.1"}              -> "sha1 of the json"
+    """
+    url = record.get("url")
+    if url:
+        return hashlib.sha1(url.encode("utf-8", errors="replace")).hexdigest()
+    # No URL: hash a stable representation so identical records collapse.
+    basis = repr(sorted((k, str(v)) for k, v in record.items() if k != "_id"))
+    return hashlib.sha1(basis.encode("utf-8", errors="replace")).hexdigest()
+
 
 class ElasticsearchManager:
-    """
-    Manages Elasticsearch operations for body content search.
-
-    This class handles:
-    - Connection to Elasticsearch cluster
-    - Index creation with proper mappings
-    - Bulk indexing of documents
-    - Full-text search queries
-    - Error handling and fallback behavior
-    """
+    """Primary Elasticsearch store for scan records."""
 
     def __init__(self, config: Dict[str, Any]):
-        """
-        Initialize Elasticsearch manager.
-
-        Args:
-            config: Configuration dictionary with Elasticsearch settings
-        """
+        """Initialize the Elasticsearch manager from the app config dict."""
         self.config = config
-        self.es_config = config.get('elasticsearch', {})
-        self.enabled = self.es_config.get('enabled', False)
-        self.host = self.es_config.get('host', 'localhost')
-        self.port = self.es_config.get('port', 9200)
-        self.index_name = self.es_config.get('index_name', 'scanner_bodies')
-        self.timeout = self.es_config.get('timeout', 30)
-        self.bulk_batch_size = self.es_config.get('bulk_batch_size', 5000)
+        self.es_config = config.get("elasticsearch", {})
+        self.enabled = self.es_config.get("enabled", True)
+        self.host = self.es_config.get("host", "localhost")
+        self.port = self.es_config.get("port", 9200)
+        # ``index_name`` now holds the full record. ``scanner_bodies`` was the old
+        # body-only index; default to ``scanner_records`` for the full store.
+        self.index_name = self.es_config.get("index_name", "scanner_records")
+        self.timeout = self.es_config.get("timeout", 30)
+        self.bulk_batch_size = self.es_config.get("bulk_batch_size", 5000)
+        # Hard ceiling for how much decoded body we index for full-text search.
+        self.max_body_index_chars = self.es_config.get("max_body_index_chars", 2_000_000)
+        # Max hits ES will return in a single search page (index setting).
+        self.max_result_window = self.es_config.get("max_result_window", 100000)
 
         self.client: Optional[Elasticsearch] = None
         self.is_connected = False
@@ -55,31 +84,26 @@ class ElasticsearchManager:
         if self.enabled:
             self._connect()
 
-    def _connect(self) -> bool:
-        """
-        Establish connection to Elasticsearch.
+    # ------------------------------------------------------------------ #
+    # Connection & index management
+    # ------------------------------------------------------------------ #
 
-        Returns:
-            bool: True if connection successful, False otherwise
-        """
+    def _connect(self) -> bool:
+        """Establish and verify a connection to Elasticsearch."""
         try:
             self.client = Elasticsearch(
                 [f"http://{self.host}:{self.port}"],
                 request_timeout=self.timeout,
                 retry_on_timeout=True,
-                max_retries=3
+                max_retries=3,
             )
-
-            # Test connection
             if self.client.ping():
                 self.is_connected = True
                 logger.info(f"Connected to Elasticsearch at {self.host}:{self.port}")
                 return True
-            else:
-                logger.warning(f"Could not ping Elasticsearch at {self.host}:{self.port}")
-                self.is_connected = False
-                return False
-
+            logger.warning(f"Could not ping Elasticsearch at {self.host}:{self.port}")
+            self.is_connected = False
+            return False
         except ESConnectionError as e:
             logger.warning(f"Elasticsearch connection failed: {e}")
             self.is_connected = False
@@ -89,242 +113,297 @@ class ElasticsearchManager:
             self.is_connected = False
             return False
 
+    def ping(self) -> bool:
+        """Return True if the cluster answers a ping."""
+        try:
+            return bool(self.client and self.client.ping())
+        except Exception:
+            return False
+
+    def _mapping(self) -> Dict[str, Any]:
+        """Return the index settings + mappings for the full record."""
+        stored_only = {f: {"type": "text", "index": False} for f in STORED_ONLY_FIELDS}
+        return {
+            "settings": {
+                "number_of_shards": self.es_config.get("number_of_shards", 1),
+                "number_of_replicas": self.es_config.get("number_of_replicas", 0),
+                "max_result_window": self.max_result_window,
+                "analysis": {"analyzer": {"default": {"type": "standard"}}},
+            },
+            "mappings": {
+                # Unknown httpx fields are stored but not indexed, keeping the
+                # mapping stable while preserving the full record in _source.
+                "dynamic": "false",
+                "properties": {
+                    "url": {"type": "wildcard"},
+                    "redirect_location": {"type": "wildcard"},
+                    "input": {"type": "keyword"},
+                    "ip": {"type": "wildcard"},
+                    "ip_addr": {"type": "ip", "ignore_malformed": True},
+                    "host": {"type": "wildcard"},
+                    "port": {"type": "keyword"},
+                    "scheme": {"type": "keyword"},
+                    "path": {"type": "wildcard"},
+                    "method": {"type": "keyword"},
+                    "status_code": {"type": "integer"},
+                    "content_length": {"type": "long"},
+                    "content_type": {"type": "keyword"},
+                    "cname": {"type": "keyword"},
+                    "tech": {"type": "keyword"},
+                    "words": {"type": "long"},
+                    "lines": {"type": "long"},
+                    "time": {"type": "keyword"},
+                    "timestamp": {"type": "date", "ignore_malformed": True},
+                    "hash": {
+                        "type": "object",
+                        "properties": {
+                            "body_sha256": {"type": "keyword"},
+                            "header_sha256": {"type": "keyword"},
+                            "body_mmh3": {"type": "keyword"},
+                            "header_mmh3": {"type": "keyword"},
+                        },
+                    },
+                    "body_decoded": {"type": "text", "analyzer": "standard"},
+                    **stored_only,
+                },
+            },
+        }
+
     def create_index(self) -> bool:
-        """
-        Create Elasticsearch index with proper mappings.
-
-        The index is optimized for phrase matching on body content:
-        - body_decoded: Full-text field with standard analyzer
-        - doc_id: Keyword field for MongoDB _id reference
-        - url: Keyword field for reference
-        - timestamp: Date field for sorting/filtering
-
-        Returns:
-            bool: True if index created or already exists, False on error
-        """
+        """Create the record index with the full mapping if it does not exist."""
         if not self.is_connected or not self.client:
             logger.warning("Cannot create index: Elasticsearch not connected")
             return False
-
         try:
-            # Check if index already exists
             if self.client.indices.exists(index=self.index_name):
                 logger.info(f"Index '{self.index_name}' already exists")
                 return True
-
-            # Define index mapping
-            mapping = {
-                "settings": {
-                    "number_of_shards": self.es_config.get('number_of_shards', 1),
-                    "number_of_replicas": self.es_config.get('number_of_replicas', 0),
-                    "max_result_window": 10000,
-                    "analysis": {
-                        "analyzer": {
-                            "default": {
-                                "type": "standard"
-                            }
-                        }
-                    }
-                },
-                "mappings": {
-                    "properties": {
-                        "doc_id": {
-                            "type": "keyword"
-                        },
-                        "body_decoded": {
-                            "type": "text",
-                            "analyzer": "standard"
-                        },
-                        "url": {
-                            "type": "keyword"
-                        },
-                        "timestamp": {
-                            "type": "date"
-                        }
-                    }
-                }
-            }
-
-            # Create index
-            self.client.indices.create(index=self.index_name, body=mapping)
+            body = self._mapping()
+            self.client.indices.create(
+                index=self.index_name,
+                settings=body["settings"],
+                mappings=body["mappings"],
+            )
             logger.info(f"Created Elasticsearch index '{self.index_name}'")
             return True
-
         except Exception as e:
             logger.error(f"Failed to create index: {e}")
             return False
 
-    def index_document(self, doc_id: str, body_decoded: str, url: str = "", timestamp: Any = None) -> bool:
-        """
-        Index a single document in Elasticsearch.
+    # ------------------------------------------------------------------ #
+    # Indexing
+    # ------------------------------------------------------------------ #
 
-        Args:
-            doc_id: MongoDB document _id (as string)
-            body_decoded: Decoded response body content
-            url: URL for reference (optional)
-            timestamp: Document timestamp (optional)
+    def _prepare_source(self, record: Dict[str, Any]) -> Dict[str, Any]:
+        """Return a copy of a record ready to index (adds derived fields)."""
+        source = dict(record)
+        source.pop("_id", None)
 
-        Returns:
-            bool: True if indexed successfully, False otherwise
-        """
+        # Numeric IP copy for CIDR / range queries.
+        ip_value = source.get("ip")
+        if ip_value:
+            source["ip_addr"] = ip_value
+
+        # Precompute redirect location so URL search can match it.
+        header = source.get("header")
+        if isinstance(header, dict):
+            loc = header.get("location") or header.get("Location")
+            if loc:
+                source["redirect_location"] = loc
+
+        # Cap the indexed body size to keep the index bounded.
+        body_decoded = source.get("body_decoded")
+        if body_decoded and len(body_decoded) > self.max_body_index_chars:
+            source["body_decoded"] = body_decoded[: self.max_body_index_chars]
+
+        return source
+
+    def index_document(self, record: Dict[str, Any], doc_id: Optional[str] = None) -> bool:
+        """Index (upsert) a single full record."""
         if not self.is_connected or not self.client:
             return False
-
         try:
-            doc = {
-                "doc_id": doc_id,
-                "body_decoded": body_decoded,
-                "url": url,
-                "timestamp": timestamp
-            }
-
-            self.client.index(index=self.index_name, id=doc_id, document=doc)
+            source = self._prepare_source(record)
+            _id = doc_id or doc_id_for(record)
+            self.client.index(index=self.index_name, id=_id, document=source)
             return True
-
         except Exception as e:
-            logger.warning(f"Failed to index document {doc_id}: {e}")
+            logger.warning(f"Failed to index document: {e}")
             return False
 
-    def bulk_index_documents(self, documents: List[Dict[str, Any]]) -> tuple[int, int]:
-        """
-        Bulk index multiple documents for better performance.
-
-        Args:
-            documents: List of dicts with keys: doc_id, body_decoded, url, timestamp
-
-        Returns:
-            tuple: (success_count, error_count)
-        """
+    def bulk_index(self, records: Iterable[Dict[str, Any]]) -> Tuple[int, int]:
+        """Bulk upsert full records. Returns (success_count, error_count)."""
         if not self.is_connected or not self.client:
             logger.warning("Cannot bulk index: Elasticsearch not connected")
-            return (0, len(documents))
+            records = list(records)
+            return (0, len(records))
+
+        def actions():
+            for rec in records:
+                _id = rec.get("_id") or doc_id_for(rec)
+                yield {
+                    "_index": self.index_name,
+                    "_id": _id,
+                    "_source": self._prepare_source(rec),
+                }
 
         try:
-            # Prepare bulk actions
-            actions = []
-            for doc in documents:
-                if 'doc_id' not in doc or 'body_decoded' not in doc:
-                    continue
-
-                action = {
-                    "_index": self.index_name,
-                    "_id": doc['doc_id'],
-                    "_source": {
-                        "doc_id": doc['doc_id'],
-                        "body_decoded": doc['body_decoded'],
-                        "url": doc.get('url', ''),
-                        "timestamp": doc.get('timestamp')
-                    }
-                }
-                actions.append(action)
-
-            if not actions:
-                return (0, 0)
-
-            # Execute bulk operation
             success, errors = helpers.bulk(
                 self.client,
-                actions,
+                actions(),
                 chunk_size=self.bulk_batch_size,
                 raise_on_error=False,
-                raise_on_exception=False
+                raise_on_exception=False,
             )
-
             error_count = len(errors) if isinstance(errors, list) else 0
-            logger.info(f"Bulk indexed {success} documents, {error_count} errors")
-
+            if error_count:
+                logger.warning(f"Bulk index: {success} ok, {error_count} errors")
             return (success, error_count)
-
         except Exception as e:
             logger.error(f"Bulk indexing failed: {e}")
-            return (0, len(documents))
-
-    def search_body(self, query: str, size: int = 10000) -> List[str]:
-        """
-        Search for documents containing the query phrase in body content.
-
-        This performs a phrase match query for exact substring matching,
-        similar to the MongoDB regex approach but much faster.
-
-        Args:
-            query: Search query string (phrase to find)
-            size: Maximum number of results to return
-
-        Returns:
-            List of MongoDB document IDs (as strings) that match the query
-        """
-        if not self.is_connected or not self.client:
-            logger.warning("Cannot search: Elasticsearch not connected")
-            return []
-
-        try:
-            # Use match_phrase for exact phrase matching
-            search_query = {
-                "query": {
-                    "match_phrase": {
-                        "body_decoded": {
-                            "query": query
-                        }
-                    }
-                },
-                "size": size,
-                "_source": ["doc_id"]
-            }
-
-            response = self.client.search(index=self.index_name, body=search_query)
-
-            # Extract document IDs
-            doc_ids = []
-            for hit in response['hits']['hits']:
-                doc_id = hit['_source']['doc_id']
-                doc_ids.append(doc_id)
-
-            logger.info(f"Elasticsearch found {len(doc_ids)} matches for query: {query[:50]}...")
-            return doc_ids
-
-        except Exception as e:
-            logger.error(f"Search failed: {e}")
-            return []
+            return (0, 0)
 
     def delete_document(self, doc_id: str) -> bool:
-        """
-        Delete a document from the index.
-
-        Args:
-            doc_id: MongoDB document _id (as string)
-
-        Returns:
-            bool: True if deleted successfully, False otherwise
-        """
+        """Delete a document by id (ignores 404)."""
         if not self.is_connected or not self.client:
             return False
-
         try:
-            self.client.delete(index=self.index_name, id=doc_id, ignore=[404])
+            self.client.delete(index=self.index_name, id=doc_id)
+            return True
+        except NotFoundError:
             return True
         except Exception as e:
             logger.warning(f"Failed to delete document {doc_id}: {e}")
             return False
 
-    def get_index_stats(self) -> Optional[Dict[str, Any]]:
-        """
-        Get statistics about the Elasticsearch index.
+    # ------------------------------------------------------------------ #
+    # Reads
+    # ------------------------------------------------------------------ #
 
-        Returns:
-            Dict with index stats or None if unavailable
+    def count(self, query: Dict[str, Any]) -> int:
+        """Return the number of documents matching an ES query."""
+        if not self.is_connected or not self.client:
+            return 0
+        try:
+            resp = self.client.count(index=self.index_name, query=query)
+            return int(resp.get("count", 0))
+        except Exception as e:
+            logger.error(f"Count failed: {e}")
+            return 0
+
+    def search(
+        self,
+        query: Dict[str, Any],
+        source: Optional[List[str]] = None,
+        sort: Optional[List[Any]] = None,
+        from_: int = 0,
+        size: int = 50,
+        track_total_hits: bool = True,
+    ) -> Tuple[List[Dict[str, Any]], int]:
+        """Run a search and return (hits, total).
+
+        Each hit is the ``_source`` dict with ``_id`` injected.
         """
         if not self.is_connected or not self.client:
+            return [], 0
+        try:
+            kwargs: Dict[str, Any] = {
+                "index": self.index_name,
+                "query": query,
+                "from_": from_,
+                "size": size,
+                "track_total_hits": track_total_hits,
+            }
+            if source is not None:
+                kwargs["source"] = source
+            if sort is not None:
+                kwargs["sort"] = sort
+            resp = self.client.search(**kwargs)
+            hits = []
+            for hit in resp["hits"]["hits"]:
+                doc = dict(hit.get("_source", {}))
+                doc["_id"] = hit["_id"]
+                hits.append(doc)
+            total = resp["hits"]["total"]
+            total_val = total["value"] if isinstance(total, dict) else int(total)
+            return hits, int(total_val)
+        except Exception as e:
+            logger.error(f"Search failed: {e}")
+            return [], 0
+
+    def get(self, doc_id: str) -> Optional[Dict[str, Any]]:
+        """Fetch a single document by id, with ``_id`` injected, or None."""
+        if not self.is_connected or not self.client:
+            return None
+        try:
+            resp = self.client.get(index=self.index_name, id=doc_id)
+            doc = dict(resp.get("_source", {}))
+            doc["_id"] = resp["_id"]
+            return doc
+        except NotFoundError:
+            return None
+        except Exception as e:
+            logger.warning(f"Get failed for {doc_id}: {e}")
             return None
 
+    def scan(
+        self,
+        query: Dict[str, Any],
+        source: Optional[List[str]] = None,
+        sort: Optional[List[Any]] = None,
+    ) -> Iterable[Dict[str, Any]]:
+        """Yield every document matching a query (uses the scroll/scan helper).
+
+        Use for exports where the full result set is needed regardless of size.
+        """
+        if not self.is_connected or not self.client:
+            return
+        body: Dict[str, Any] = {"query": query}
+        if sort is not None:
+            body["sort"] = sort
+        try:
+            for hit in helpers.scan(
+                self.client,
+                index=self.index_name,
+                query=body,
+                _source=source if source is not None else True,
+                preserve_order=sort is not None,
+            ):
+                doc = dict(hit.get("_source", {}))
+                doc["_id"] = hit["_id"]
+                yield doc
+        except Exception as e:
+            logger.error(f"Scan failed: {e}")
+            return
+
+    def distinct_terms(self, field: str, size: int = 1000) -> List[str]:
+        """Return distinct values for a keyword field via a terms aggregation."""
+        if not self.is_connected or not self.client:
+            return []
+        try:
+            resp = self.client.search(
+                index=self.index_name,
+                size=0,
+                aggs={"values": {"terms": {"field": field, "size": size}}},
+            )
+            buckets = resp["aggregations"]["values"]["buckets"]
+            return sorted(b["key"] for b in buckets if b.get("key"))
+        except Exception as e:
+            logger.error(f"Aggregation on {field} failed: {e}")
+            return []
+
+    def get_index_stats(self) -> Optional[Dict[str, Any]]:
+        """Return document count and size for the index, or None."""
+        if not self.is_connected or not self.client:
+            return None
         try:
             stats = self.client.indices.stats(index=self.index_name)
-            doc_count = stats['_all']['primaries']['docs']['count']
-            size_bytes = stats['_all']['primaries']['store']['size_in_bytes']
-
+            primaries = stats["_all"]["primaries"]
+            size_bytes = primaries["store"]["size_in_bytes"]
             return {
-                'document_count': doc_count,
-                'size_bytes': size_bytes,
-                'size_mb': round(size_bytes / (1024 * 1024), 2)
+                "document_count": primaries["docs"]["count"],
+                "size_bytes": size_bytes,
+                "size_mb": round(size_bytes / (1024 * 1024), 2),
             }
         except Exception:
             return None
