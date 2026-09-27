@@ -96,3 +96,13 @@ tests/
 # Backups
 *.bak
 *.backup
+
+# Terraform
+terraform/.terraform/
+*.tfstate
+*.tfstate.*
+*.tfplan
+crash.log
+# Never commit real variable files (they hold the Hetzner API token); keep example
+*.tfvars
+!*.tfvars.example
