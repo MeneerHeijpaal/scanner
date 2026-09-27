@@ -36,7 +36,7 @@ of naabu, nuclei, Interactsh, and multi-VPS distribution.
       | (tech)   |
       v          |
   nuclei (nuclei_scan.py, --from-elasticsearch)
-      |   uses Interactsh (h4xx.nl) for OOB
+      |   uses Interactsh (example.com) for OOB
       |   findings.json
       v
   import_nuclei.py
@@ -140,7 +140,7 @@ committed. Copy `terraform.tfvars.example` to `terraform.tfvars` and fill it in.
          distribute_targets.py (round-robin shards)
         /            |             \
    worker-1      worker-2       worker-3     (Hetzner, cloud-init provisioned)
-   httpx/naabu/nuclei each, nuclei -> Interactsh (h4xx.nl)
+   httpx/naabu/nuclei each, nuclei -> Interactsh (example.com)
         \            |             /
          \           |            /
           central Elasticsearch (scanner_records / _ports / _findings)

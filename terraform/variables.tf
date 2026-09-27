@@ -55,7 +55,7 @@ variable "es_endpoint" {
 variable "interactsh_server" {
   description = "Interactsh server URL used by nuclei on the workers."
   type        = string
-  default     = "h4xx.nl"
+  default     = "example.com"
 }
 
 variable "labels" {
