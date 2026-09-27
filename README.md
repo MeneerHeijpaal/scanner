@@ -1,19 +1,25 @@
-# Scanner - HTTP Reconnaissance Tool
+# Scanner - Reconnaissance Toolkit
 
-A powerful web-based HTTP reconnaissance tool that combines httpx scanning with an intuitive Flask interface for analyzing scan results. Features fast body content search powered by Elasticsearch and comprehensive filtering capabilities.
+A web-based reconnaissance toolkit built around the ProjectDiscovery stack. It
+probes targets with **httpx**, scans ports with **naabu**, enriches results with
+**nuclei** (using a self-hosted **Interactsh** server for out-of-band detection),
+stores everything in **Elasticsearch**, and can spread the work across multiple
+**Hetzner** VPSes with Terraform. A Flask web interface provides fast search and
+filtering over the results.
 
 ## Features
 
-- **Standalone**: Just clone this repository and follow the setup (no files in ~/, /etc, /opt.. etc)
-- **Fast Body Search**: Search response body content in <1 second (Elasticsearch-powered)
+- **Fast Body Search**: Search response body content in <1 second (Elasticsearch phrase search)
 - **Single Store**: Elasticsearch is the one runtime data store — all filters, counts, sorting and pagination run as a single query (no MongoDB at runtime)
-- **Advanced Filtering**: IP/URL patterns, CIDR notation (native), wildcard matching (e.g., `192.168.x.1`)
+- **Advanced Filtering**: IP/URL patterns, native CIDR notation, wildcard matching (e.g., `192.168.x.1`)
 - **Technology Detection**: Filter by detected web technologies (Apache, nginx, WordPress, etc.)
+- **Port & Service Data**: naabu port/service/version results indexed alongside HTTP records
+- **Tech-conditional Enrichment**: nuclei runs a technology's templates only against URLs that expose that technology
+- **Out-of-band Detection**: self-hosted Interactsh server for blind SSRF/RCE/etc.
 - **Hash Labeling**: Tag and categorize responses using SHA256 hashes (stored in local SQLite)
-- **HTTP Status Filtering**: Filter by response codes (200, 301, 404, etc.)
 - **Export Capabilities**: Download URLs, domains, raw responses, and headers
-- **Live Counter**: Real-time result count updates as you filter
 - **Idempotent Import**: Records are keyed by URL, so re-importing a URL updates it in place
+- **Scale-out**: Distribute scanning across multiple Hetzner VPSes via Terraform
 
 ## Architecture
 
@@ -49,521 +55,319 @@ Scanner/
 └── requirements.txt             # Python dependencies
 ```
 
-See [`Documentation/`](Documentation/) for full details on each component and the
-overall architecture. The scan pipeline is: **httpx** (probe) → **naabu** (ports)
-→ **nuclei** (tech-conditional enrichment, with **Interactsh** for out-of-band
-detection), all stored in **Elasticsearch**, and optionally spread across
-multiple **Hetzner** VPSes via Terraform.
+The scan pipeline is: **httpx** (probe) → **naabu** (ports) → **nuclei**
+(tech-conditional enrichment, with **Interactsh** for out-of-band detection), all
+stored in **Elasticsearch** and served by the Flask UI. See
+[`Documentation/`](Documentation/) for full details on each component and the
+overall architecture — [`Documentation/architecture.md`](Documentation/architecture.md)
+is the best starting point.
 
 ## Prerequisites
 
 ### Required
 
 - **Python 3.8+**
-- **Elasticsearch 8.x** (the primary and only runtime data store)
-- **httpx** binary ([Download releases](https://github.com/projectdiscovery/httpx/releases))
+- **Elasticsearch 8.x** — the primary and only runtime data store
 - **Docker** (recommended, for running Elasticsearch)
+- **httpx** binary ([releases](https://github.com/projectdiscovery/httpx/releases))
 
-### Optional
+### Optional (per feature)
 
-- **MongoDB 4.4+** — only needed to migrate legacy data into Elasticsearch via `Python/migrate_to_elasticsearch.py`. Not used at runtime.
+- **naabu** binary ([releases](https://github.com/projectdiscovery/naabu/releases)) — port scanning. Needs `libpcap` for SYN scans.
+- **nuclei** binary ([releases](https://github.com/projectdiscovery/nuclei/releases)) — enrichment.
+- **Interactsh** server — for nuclei out-of-band detection (see [`Documentation/interactsh.md`](Documentation/interactsh.md)).
+- **Terraform** + a **Hetzner Cloud** account — for multi-VPS distribution.
+- **MongoDB 4.4+** — only to migrate legacy data into Elasticsearch via `Python/migrate_to_elasticsearch.py`. Not used at runtime.
 
 ### System Requirements
 
-**Minimum:**
-- 4GB RAM
-- 10GB free disk space
-
-**Recommended for large datasets (500k+ URLs):**
-- 8GB+ RAM
-- 50GB+ free disk space
-- SSD for database storage
+**Minimum:** 4 GB RAM, 10 GB free disk.
+**Recommended for large datasets (500k+ URLs):** 8 GB+ RAM, 50 GB+ disk, SSD.
 
 ## Installation
 
-### 1. Clone the Repository
+### 1. Clone the repository
 
 ```bash
 git clone https://github.com/MeneerHeijpaal/scanner.git
 cd scanner
 ```
 
-### 2. Install MongoDB
+### 2. Install the ProjectDiscovery binaries
 
-Download MongoDB Community Server for your platform:
-- **macOS**: https://www.mongodb.com/try/download/community (select macOS)
-- **Linux**: https://www.mongodb.com/try/download/community (select Linux)
-- **Windows**: https://www.mongodb.com/try/download/community (select Windows)
-
-Extract the MongoDB binaries to the `bin/` directory:
+Place the binaries in `bin/` (they are gitignored) or anywhere on your `PATH`.
+The wrappers look in `./`, `./bin/`, then `PATH`.
 
 ```bash
-# Example for macOS (adjust version as needed)
-curl -O https://fastdl.mongodb.org/osx/mongodb-macos-x86_64-7.0.4.tgz
-tar -zxvf mongodb-macos-x86_64-7.0.4.tgz
-cp mongodb-macos-x86_64-7.0.4/bin/{mongod,mongosh} bin/
+# httpx (required)
+wget https://github.com/projectdiscovery/httpx/releases/download/v1.6.9/httpx_1.6.9_linux_amd64.zip
+unzip httpx_1.6.9_linux_amd64.zip && mv httpx bin/ && chmod +x bin/httpx
+
+# naabu (optional) and nuclei (optional) — install the same way from their releases pages.
+# On Debian/Ubuntu, naabu SYN scanning needs libpcap:  sudo apt-get install -y libpcap-dev
 ```
 
-### 3. Install httpx
-
-Download httpx binary for your platform:
-- **macOS/Linux/Windows**: https://github.com/projectdiscovery/httpx/releases
-
-Place the `httpx` binary in the `bin/` directory:
+### 3. Set up the Python environment
 
 ```bash
-# Example for macOS/Linux
-wget https://github.com/projectdiscovery/httpx/releases/download/v1.3.7/httpx_1.3.7_macOS_amd64.zip
-unzip httpx_1.3.7_macOS_amd64.zip
-mv httpx bin/
-chmod +x bin/httpx
-```
-
-### 4. Set Up Python Environment
-
-```bash
-# Create virtual environment
 python3 -m venv .venv
-
-# Activate virtual environment
-# On macOS/Linux:
-source .venv/bin/activate
-
-# On Windows:
-# .venv\Scripts\activate
-
-# Install Python dependencies
+source .venv/bin/activate           # Windows: .venv\Scripts\activate
 pip install -r requirements.txt
 ```
 
-### 5. Set Up Elasticsearch (Optional but Recommended)
-
-Elasticsearch provides 30-100x faster body content search.
+### 4. Start Elasticsearch
 
 ```bash
-# Create data directory (if it's not already there)
 mkdir -p Elastic_Data
-
-# Give the directorty the correct rights for docker.
-# The 777 setup is dangerous, but works all the time
-# You may want to set the rights stricter if you like.
+# The 777 mode is permissive but avoids Docker volume permission issues;
+# tighten it if you prefer.
 chmod 777 Elastic_Data
 
-# Start Elasticsearch using Docker Compose
 docker compose up -d
-
-# Verify Elasticsearch is running
-curl http://localhost:9200
+curl http://localhost:9200            # verify it is up
 ```
 
-**Without Docker Compose:**
+Without Docker Compose:
+
 ```bash
-docker run -d \
-  --name elasticsearch \
-  -p 9200:9200 \
-  -p 9300:9300 \
-  -e "discovery.type=single-node" \
-  -e "xpack.security.enabled=false" \
+docker run -d --name elasticsearch -p 9200:9200 -p 9300:9300 \
+  -e "discovery.type=single-node" -e "xpack.security.enabled=false" \
   -e "ES_JAVA_OPTS=-Xms2g -Xmx2g" \
   -v $(pwd)/Elastic_Data:/usr/share/elasticsearch/data \
   docker.elastic.co/elasticsearch/elasticsearch:8.11.0
 ```
 
+The application creates its indices automatically on first run and import; there
+is no manual index setup.
+
 ## Quick Start
 
-### 1. Start MongoDB
-
 ```bash
-# Create database directory (if it's not already there)
-mkdir -p Database
-
-# Start MongoDB
-./bin/mongod --dbpath ./Database --bind_ip 127.0.0.1 --port 27017 --logpath ./Database/mongodb.log
-```
-
-### 2. Start Elasticsearch (Optional)
-
-```bash
-docker compose up -d
-```
-
-### 3. Run a Scan
-
-Create a file `urls.txt` with URLs to scan (one per line):
-
-```
-example.com
-https://test.com
-192.168.1.1
-subdomain.example.com/path
-```
-
-Run the scanner:
-
-```bash
-# Activate virtual environment if not already active
 source .venv/bin/activate
 
-# Run scan
+# 1. Probe targets with httpx (one URL/host per line in urls.txt)
 python3 Python/scanner.py -f urls.txt -o results.json
-```
 
-### 4. Import Scan Results
-
-```bash
+# 2. Import the results into Elasticsearch
 python3 Python/import_httpx.py -f results.json
+
+# 3. Start the web interface
+python3 Server/server.py
+# Open http://127.0.0.1:8001
 ```
 
 Records are indexed directly into Elasticsearch and keyed by URL, so re-importing
-the same URL updates the existing record.
+the same URL updates the existing record instead of creating a duplicate.
 
-### 5. Start Web Interface
+### Port scanning (naabu)
 
 ```bash
-# In a new terminal, activate virtual environment
-source .venv/bin/activate
-
-# Start Flask server
-python3 Server/server.py
+# Scan the ports listed in ports.conf against hosts derived from urls.txt,
+# then import into Elasticsearch.
+python3 Python/naabu_scan.py -l urls.txt -o ports.json --import
 ```
 
-### 6. Access Web Interface
+Edit `ports.conf` to change which ports are scanned (default:
+`21,22,23,25,110,143,445,993,995,2222`). See
+[`Documentation/naabu.md`](Documentation/naabu.md).
 
-Open your browser and navigate to:
+### Enrichment (nuclei + Interactsh)
+
+```bash
+# Tech-aware: read technologies httpx detected from Elasticsearch and run only
+# the matching templates per URL group; import findings when done.
+python3 Python/nuclei_scan.py --from-elasticsearch -o findings.json --import
+
+# Or run the tech-conditional workflow over a URL list directly:
+python3 Python/nuclei_scan.py -l urls.txt -o findings.json --import
 ```
-http://127.0.0.1:8001
-```
 
-### 7. Index in Elasticsearch (First Time Only)
+`nuclei.yaml` holds the per-VPS settings and `interactsh.config` the out-of-band
+server. See [`Documentation/nuclei.md`](Documentation/nuclei.md) and
+[`Documentation/interactsh.md`](Documentation/interactsh.md).
 
-If you have existing data and just enabled Elasticsearch:
+### Migrate legacy MongoDB data (one-off)
+
+If you have data from the old MongoDB-backed version:
 
 ```bash
 python3 Python/migrate_to_elasticsearch.py
+python3 Python/migrate_to_elasticsearch.py --batch-size 1000   # slower systems
 ```
-
-This typically takes 30-60 minutes for 600k documents.
 
 ## Configuration
 
-### Server Configuration
-
-Edit `Server/config.yml` to customize:
+### Server configuration (`Server/config.yml`)
 
 ```yaml
-# Flask server settings
 flask:
   host: "127.0.0.1"
   port: 8001
   debug: false
 
-# MongoDB settings
-mongodb:
-  uri: "mongodb://localhost:27017/"
-  database: "urls"
-  collection: "data"
-
-# Elasticsearch settings (optional)
-elasticsearch:
+elasticsearch:            # primary and only runtime data store
   enabled: true
   host: "localhost"
   port: 9200
-  index_name: "scanner_bodies"
+  index_name: "scanner_records"    # httpx records
+  ports_index: "scanner_ports"     # naabu results
+  findings_index: "scanner_findings"  # nuclei findings
   bulk_batch_size: 5000
+  max_result_window: 100000
+  max_body_index_chars: 2000000
 
-# Validation limits
 validation:
   max_query_length: 500
   max_per_page: 1000
   max_body_search_length: 1000
+
+# mongodb: (legacy) read only by Python/migrate_to_elasticsearch.py
 ```
 
-### httpx Configuration
+Environment overrides: `SECRET_KEY`, `ES_HOST`, `ES_PORT`, `ES_INDEX`, `FLASK_DEBUG`.
 
-Edit `httpx-config.yaml` to customize scanning behavior:
+### httpx configuration (`httpx-config.yaml`)
 
-```yaml
-# Enable technology detection
-tech-detect: true
+Standard httpx config (tech detection, threads, rate limit, follow-redirects,
+etc.). `Python/scanner.py` always runs httpx with this file. See the
+[httpx docs](https://github.com/projectdiscovery/httpx).
 
-# Performance settings
-threads: 80
-rate-limit: 250
-timeout: 10
+### ports / nuclei / interactsh
 
-# Request settings
-follow-redirects: true
-status-code: true
-```
+- `ports.conf` — ports naabu scans.
+- `nuclei.yaml` — per-VPS nuclei settings (concurrency 30, bulk-size 30, rate-limit 200, `scan-strategy: host-spray`, `response-size-read` 8 MB).
+- `interactsh.config` — `server_url` and `server_ip` for the out-of-band server.
 
-See [httpx documentation](https://github.com/projectdiscovery/httpx) for all options.
-
-## Usage Examples
-
-### Basic Scanning
+## Command Reference
 
 ```bash
-# Scan single URL
-python3 Python/scanner.py -u https://example.com -o output.json
+# httpx
+python3 Python/scanner.py -f urls.txt -o results.json      # from a file
+python3 Python/scanner.py -u https://example.com -o out.json
+python3 Python/import_httpx.py -f results.json [--es-host H --es-port P --es-index I --batch-size N]
 
-# Scan from file
-python3 Python/scanner.py -f urls.txt -o results.json
+# naabu
+python3 Python/naabu_scan.py -l urls.txt -o ports.json [--import] [-c ports.conf]
+python3 Python/naabu_scan.py -host example.com -o ports.json
+python3 Python/import_naabu.py -f ports.json [--es-index scanner_ports]
 
-# Scan with custom httpx config
-python3 Python/scanner.py -f urls.txt -o results.json -c httpx-config.yaml
+# nuclei
+python3 Python/nuclei_scan.py -l urls.txt -o findings.json [--import]        # workflow mode
+python3 Python/nuclei_scan.py --from-elasticsearch -o findings.json [--import]  # tech-aware
+python3 Python/import_nuclei.py -f findings.json [--es-index scanner_findings]
+
+# distribute across workers
+python3 Python/distribute_targets.py -f targets.txt --workers 3 \
+    [--hosts ip1,ip2,ip3 --remote-path /opt/scanner/targets.txt]
+
+# migration (one-off)
+python3 Python/migrate_to_elasticsearch.py [--mongo-uri URI --db NAME --collection NAME --batch-size N]
 ```
 
-### Importing Results
+## Distributing across multiple VPSes (Terraform + Hetzner)
+
+The `terraform/` module provisions N identical scanner workers on Hetzner Cloud
+(cloud-init installs httpx/naabu/nuclei, nuclei templates, this repo, and a venv,
+and points each worker at a central Elasticsearch and the Interactsh server).
 
 ```bash
-# Basic import
-python3 Python/import_httpx.py -f results.json
-
-# Custom database
-python3 Python/import_httpx.py -f results.json --db mydb --collection scans
-
-# Disable Elasticsearch indexing during import
-python3 Python/import_httpx.py -f results.json --no-elasticsearch
+cd terraform
+cp terraform.tfvars.example terraform.tfvars   # then edit it
+# set hcloud_token, worker_count, ssh_public_key_path, ssh_admin_cidrs, es_endpoint
+terraform init
+terraform apply
 ```
 
-### Elasticsearch Management
+`terraform.tfvars` holds your Hetzner API token and is **gitignored** — it is
+never committed. After apply, read the worker IPs (`terraform output worker_ips`)
+and shard your targets across them:
 
 ```bash
-# Index existing MongoDB data
-python3 Python/migrate_to_elasticsearch.py
-
-# Custom batch size (for slower systems)
-python3 Python/migrate_to_elasticsearch.py --batch-size 1000
-
-# Delete and reindex
-curl -X DELETE http://localhost:9200/scanner_bodies
-python3 Python/migrate_to_elasticsearch.py
+python3 Python/distribute_targets.py -f targets.txt --workers 3 \
+    --hosts 203.0.113.10,203.0.113.11,203.0.113.12
 ```
 
-## Limits and Considerations for Large Datasets
-
-### MongoDB Document Size Limit
-
-MongoDB has a **16MB document size limit**. The import script automatically:
-- Detects oversized documents
-- Truncates large fields (body, headers) to fit
-- Logs truncated documents
-
-**Workaround**: For extremely large responses (>16MB), consider:
-- Storing bodies externally (filesystem, S3)
-- Increasing truncation threshold in import script
-
-### Elasticsearch Memory Requirements
-
-**Memory usage scales with dataset size:**
-
-| Documents | Index Size | Recommended RAM |
-|-----------|------------|-----------------|
-| 100k | ~5GB | 4GB |
-| 500k | ~25GB | 8GB |
-| 1M+ | ~50GB+ | 16GB+ |
-
-**Memory settings in docker-compose.yml:**
-```yaml
-environment:
-  - "ES_JAVA_OPTS=-Xms4g -Xmx4g"  # Adjust as needed
-```
-
-### Search Performance
-
-**Body search performance:**
-- **With Elasticsearch**: 50-500ms (recommended for 100k+ documents)
-- **Without Elasticsearch**: 5-15 seconds (MongoDB regex fallback)
-
-**Other queries** (IP, URL, hash, status):
-- Indexed in MongoDB: 5-50ms regardless of dataset size
-
-### Disk Space Requirements
-
-**Estimate for 500k URLs:**
-- MongoDB: ~30GB (with bodies)
-- Elasticsearch: ~25GB (body content only)
-- **Total**: ~55GB
-
-**Growth rate**: ~100KB per URL (average)
-
-### Migration Time
-
-**Elasticsearch indexing speed:**
-- ~10,000-20,000 documents/minute
-- **100k documents**: ~5-10 minutes
-- **500k documents**: ~25-50 minutes
-- **1M documents**: ~50-100 minutes
-
-### Recommended Deployment for Large Datasets
-
-**For 1M+ URLs:**
-
-1. **Use SSD storage** for databases
-2. **Increase Elasticsearch heap**: 8GB+ (`ES_JAVA_OPTS=-Xms8g -Xmx8g`)
-3. **Increase MongoDB cache**: Add to `mongod` command: `--wiredTigerCacheSizeGB 4`
-4. **Split imports**: Import in batches instead of one large file
-5. **Monitor resources**: Use `docker stats` and `top` to monitor usage
-
-## Troubleshooting
-
-### MongoDB won't start
-
-```bash
-# Check if port 27017 is in use
-lsof -i :27017
-
-# Try different port
-./bin/mongod --dbpath ./Database --bind_ip 127.0.0.1 --port 27018
-
-# Update Server/config.yml with new port
-```
-
-### Elasticsearch won't start
-
-```bash
-# Check Docker logs
-docker compose logs elasticsearch
-
-# Common fix: Remove data and restart
-docker compose down
-sudo rm -rf Elastic_Data/*
-chmod 777 Elastic_Data
-docker compose up -d
-```
-
-### Elasticsearch permission errors
-
-```bash
-# Fix permissions
-chmod 777 Elastic_Data
-docker compose restart
-```
-
-### Search not using Elasticsearch
-
-1. Check Elasticsearch is running: `curl http://localhost:9200`
-2. Check server logs for "Elasticsearch integration enabled"
-3. Verify config.yml has `elasticsearch.enabled: true`
-4. Restart Flask server
-
-### Migration fails
-
-```bash
-# Check Elasticsearch health
-curl http://localhost:9200/_cluster/health?pretty
-
-# Reduce batch size
-python3 Python/migrate_to_elasticsearch.py --batch-size 1000
-
-# Check MongoDB connection
-python3 Python/migrate_to_elasticsearch.py --mongo-uri mongodb://localhost:27017
-```
+All workers ingest into the same Elasticsearch, so their results appear together
+in the UI. `nuclei.yaml` limits apply per worker, so throughput scales with
+`worker_count`. See [`Documentation/architecture.md`](Documentation/architecture.md).
 
 ## Web Interface Features
 
-### Search Filters
+### Search filters
 
-- **IP Address**: Exact match, CIDR ranges, wildcards (192.168.x.x)
-- **URL Pattern**: Substring matching in URLs and redirect locations
-- **Response Body**: Full-text phrase search (with Elasticsearch)
-- **Body Hash**: SHA256 hash of response body
-- **Header Hash**: SHA256 hash of response headers
-- **HTTP Status Codes**: Filter by response codes
-- **Technologies**: Filter by detected technologies (Apache, nginx, etc.)
-- **Labels**: Include/exclude labeled responses
-- **Protocol**: HTTP, HTTPS, or both
+- **IP Address**: exact match, CIDR ranges (native), wildcards (`192.168.x.x`)
+- **URL Pattern**: substring matching in URLs and redirect locations
+- **Response Body**: full-text phrase search
+- **Body / Header Hash**: SHA256 hash lookups
+- **HTTP Status Codes**, **Technologies**, **Protocol** (HTTP/HTTPS/both)
+- **Labels**: include/exclude labeled responses
 
-### Export Options
+### Export options
 
-- **URLs**: Plain text list of URLs
-- **Domains**: Unique domain list
-- **Full Data**: JSON export with all fields
-- **Headers Only**: Response headers export
+- **URLs** (plain text), **Domains** (unique), **Full Data** (JSON), **Headers**
 
-### Label Management
+### Label management
 
-- Tag responses by body or header hash
-- Include/exclude labeled items in searches
-- Persistent labels stored in SQLite
+- Tag responses by body or header hash; include/exclude in searches. Labels are
+  stored in a local SQLite database (`Server/labels/labels.db`).
+
+## Large Datasets
+
+Elasticsearch memory scales with dataset size; adjust the heap in
+`docker-compose.yml` (`ES_JAVA_OPTS=-Xmx4g` and up). For 1M+ URLs: use SSD
+storage, raise the heap to 8 GB+, import in batches, and monitor with
+`docker stats`. Because Elasticsearch is not transactional, treat scan data as
+re-importable and take snapshots of `Elastic_Data`.
+
+## Troubleshooting
+
+**Elasticsearch won't start**
+
+```bash
+docker compose logs elasticsearch
+docker compose down && sudo rm -rf Elastic_Data/* && chmod 777 Elastic_Data && docker compose up -d
+```
+
+**App can't reach Elasticsearch**
+
+```bash
+curl http://localhost:9200                 # is it up?
+# confirm elasticsearch.host/port in Server/config.yml (or ES_HOST/ES_PORT), then restart the server
+```
+
+**naabu needs privileges** — SYN scanning requires `libpcap` and root/`CAP_NET_RAW`;
+run with `sudo` locally (the Terraform workers run as root).
+
+**Migration fails**
+
+```bash
+curl http://localhost:9200/_cluster/health?pretty
+python3 Python/migrate_to_elasticsearch.py --batch-size 1000
+python3 Python/migrate_to_elasticsearch.py --mongo-uri mongodb://localhost:27017
+```
 
 ## Development
 
-### Project Structure
+Extending the web app:
 
-```
-Server/
-├── server.py                 # Flask app initialization
-├── routes.py                 # HTTP route handlers
-├── utils.py                  # Utility functions (ScannerUtils class)
-├── elasticsearch_manager.py  # Elasticsearch integration
-├── config.yml                # Configuration
-├── templates/                # Jinja2 HTML templates
-│   ├── index.html            # Main search page
-│   └── url_details.html      # URL details view
-├── static/                   # Static assets
-│   └── styles.css            # CSS styles
-└── labels/                   # SQLite database
-    ├── schema.sql            # Database schema
-    └── labels.db             # Labels database (created at runtime)
-```
+1. **New search filter** — update `Server/templates/index.html` (UI),
+   `Server/routes.py` (parameter extraction), and
+   `Server/utils.py` `build_search_query()` (add an Elasticsearch clause).
+2. **New export format** — add a route in `Server/routes.py` and a button in the template.
+3. **New nuclei tech mapping** — extend `TECH_TO_TAGS` / `TECH_TO_TEMPLATES` in
+   `Python/nuclei_scan.py`, or add a `detect → subtemplates` pair to
+   `nuclei-workflows/tech-conditional-workflow.yaml`.
 
-### Adding New Features
-
-1. **New search filter**:
-   - Update `Server/templates/index.html` (add filter UI)
-   - Update `Server/routes.py` (add parameter extraction)
-   - Update `Server/utils.py` `build_search_query()` (add query logic)
-
-2. **New export format**:
-   - Add route in `Server/routes.py`
-   - Add button in `Server/templates/index.html`
-
-3. **New technology detection**:
-   - Update `httpx-config.yaml` (add new patterns)
-   - Re-scan URLs to detect new technologies
-
-### Running Tests
+Quick checks:
 
 ```bash
-# Test MongoDB connection
-python3 -c "from pymongo import MongoClient; print(MongoClient('mongodb://localhost:27017').admin.command('ping'))"
-
-# Test Elasticsearch connection
-curl http://localhost:9200
-
-# Test httpx
-./bin/httpx -u https://example.com -json
-
-# Test Flask server
-python3 Server/server.py
-# Then visit http://127.0.0.1:8001
+python3 -m py_compile Server/*.py Python/*.py    # byte-compile everything
+curl http://localhost:9200                        # Elasticsearch up
+./bin/httpx -u https://example.com -json           # httpx works
+python3 Server/server.py                           # then visit http://127.0.0.1:8001
 ```
 
-## Performance Benchmarks
-
-### Query Performance (500k documents)
-
-| Query Type | Elasticsearch | MongoDB Only |
-|------------|--------------|--------------|
-| Body search | 50-500ms | 5-15 seconds |
-| IP lookup | 10-50ms | 10-50ms |
-| URL pattern | 10-50ms | 10-50ms |
-| Hash lookup | 5-20ms | 5-20ms |
-| Combined filters | 100-300ms | 200-500ms |
-
-### Resource Usage (500k documents)
-
-| Component | RAM | Disk | CPU |
-|-----------|-----|------|-----|
-| MongoDB | 1-2GB | 30GB | Low |
-| Elasticsearch | 4-8GB | 25GB | Low |
-| Flask | <500MB | - | Low |
-| **Total** | **6-11GB** | **55GB** | **Low** |
-
 ## Contributing
-
-Contributions are welcome! Please:
 
 1. Fork the repository
 2. Create a feature branch
@@ -572,19 +376,17 @@ Contributions are welcome! Please:
 
 ## License
 
-MIT License - see LICENSE file for details
-
-## Support
-
-For issues, questions, or feature requests, please open an issue on GitHub.
+MIT License - see LICENSE file for details.
 
 ## Acknowledgments
 
-- [httpx](https://github.com/projectdiscovery/httpx) by ProjectDiscovery
-- [MongoDB](https://www.mongodb.com/)
+- [httpx](https://github.com/projectdiscovery/httpx), [naabu](https://github.com/projectdiscovery/naabu), [nuclei](https://github.com/projectdiscovery/nuclei), and [Interactsh](https://github.com/projectdiscovery/interactsh) by ProjectDiscovery
 - [Elasticsearch](https://www.elastic.co/)
 - [Flask](https://flask.palletsprojects.com/)
+- [Hetzner Cloud](https://www.hetzner.com/cloud) + [Terraform](https://www.terraform.io/)
 
 ## Security Note
 
-This tool is designed for authorized security testing and reconnaissance. Always ensure you have permission before scanning any targets. Unauthorized scanning may be illegal in your jurisdiction.
+This tool is designed for **authorized** security testing and reconnaissance.
+Always ensure you have explicit permission before scanning any target.
+Unauthorized scanning may be illegal in your jurisdiction.
