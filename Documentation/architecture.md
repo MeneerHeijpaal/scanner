@@ -60,6 +60,12 @@ of naabu, nuclei, Interactsh, and multi-VPS distribution.
 | `index_name` | `scanner_records` | `import_httpx.py` | SHA1(url) |
 | `ports_index` | `scanner_ports` | `import_naabu.py` | SHA1(host:ip:port) |
 | `findings_index` | `scanner_findings` | `import_nuclei.py` | SHA1(template-id:matched-at) |
+| `interactions_index` | `scanner_interactions` | `interactsh_stream.py` | SHA1(unique-id:full-id:…) |
+
+The **Recon Console** dashboard (`/dashboard`, see [dashboard.md](dashboard.md))
+reads all four indices and joins them on the host. Its Interactions tab is a live
+stream of the `scanner_interactions` index, fed by the `interactsh_stream.py`
+collector running against the self-hosted Interactsh server.
 
 The record mapping is defined in `Server/elasticsearch_manager.py`. Key choices:
 

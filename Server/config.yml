@@ -46,6 +46,9 @@ elasticsearch:
   # Index name for nuclei findings (Python/import_nuclei.py)
   findings_index: "scanner_findings"
 
+  # Index name for the live Interactsh interaction stream (Python/interactsh_stream.py)
+  interactions_index: "scanner_interactions"
+
   # Connection timeout in seconds
   timeout: 30
 

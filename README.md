@@ -9,6 +9,7 @@ filtering over the results.
 
 ## Features
 
+- **Unified Dashboard**: One console (`/dashboard`) joining httpx, naabu, nuclei and Interactsh on the asset, with a live OOB interaction stream and `/body: /title: /url:` + `*` wildcard search
 - **Fast Body Search**: Search response body content in <1 second (Elasticsearch phrase search)
 - **Single Store**: Elasticsearch is the one runtime data store — all filters, counts, sorting and pagination run as a single query (no MongoDB at runtime)
 - **Advanced Filtering**: IP/URL patterns, native CIDR notation, wildcard matching (e.g., `192.168.x.1`)
@@ -153,8 +154,19 @@ python3 Python/import_httpx.py -f results.json
 
 # 3. Start the web interface
 python3 Server/server.py
-# Open http://127.0.0.1:8001
+# Search UI:  http://127.0.0.1:8001
+# Dashboard:  http://127.0.0.1:8001/dashboard
 ```
+
+The **dashboard** (`/dashboard`) joins httpx, naabu, nuclei and Interactsh data
+on the asset. Its search bar supports `/body:<str>`, `/title:<str>`, `/url:<str>`
+tokens and `*` wildcards, and its Interactions tab is a live OOB stream fed by:
+
+```bash
+python3 Python/interactsh_stream.py   # leave running; indexes Interactsh callbacks
+```
+
+See [`Documentation/dashboard.md`](Documentation/dashboard.md).
 
 Records are indexed directly into Elasticsearch and keyed by URL, so re-importing
 the same URL updates the existing record instead of creating a duplicate.

@@ -137,6 +137,7 @@ class ElasticsearchManager:
                 "properties": {
                     "url": {"type": "wildcard"},
                     "redirect_location": {"type": "wildcard"},
+                    "title": {"type": "wildcard"},
                     "input": {"type": "keyword"},
                     "ip": {"type": "wildcard"},
                     "ip_addr": {"type": "ip", "ignore_malformed": True},
@@ -193,6 +194,61 @@ class ElasticsearchManager:
     # ------------------------------------------------------------------ #
     # Indexing
     # ------------------------------------------------------------------ #
+
+    def ensure_mappings(self) -> None:
+        """Add fields that may be missing from an already-created index.
+
+        ``title`` was added after the initial mapping; PUT it onto an existing
+        index so new documents index it. Existing documents need a reindex to
+        become title-searchable, but this is idempotent and safe to call on boot.
+        """
+        if not self.is_connected or not self.client:
+            return
+        try:
+            self.client.indices.put_mapping(
+                index=self.index_name,
+                properties={"title": {"type": "wildcard"}},
+            )
+        except Exception as e:
+            logger.debug(f"ensure_mappings: {e}")
+
+    # ------------------------------------------------------------------ #
+    # Generic multi-index reads (used by the dashboard across records,
+    # ports, findings and interactions indices).
+    # ------------------------------------------------------------------ #
+
+    def raw_count(self, index: str, query: Dict[str, Any]) -> int:
+        """Count documents matching a query in an arbitrary index."""
+        if not self.is_connected or not self.client:
+            return 0
+        try:
+            return int(self.client.count(index=index, query=query).get("count", 0))
+        except Exception as e:
+            logger.debug(f"raw_count on {index}: {e}")
+            return 0
+
+    def raw_search(self, index: str, *, query: Optional[Dict[str, Any]] = None,
+                   aggs: Optional[Dict[str, Any]] = None, size: int = 0, from_: int = 0,
+                   sort: Optional[List[Any]] = None, source: Optional[List[str]] = None,
+                   track_total_hits: bool = True) -> Dict[str, Any]:
+        """Run a search against an arbitrary index and return the raw response."""
+        if not self.is_connected or not self.client:
+            return {}
+        kwargs: Dict[str, Any] = {"index": index, "size": size, "from_": from_,
+                                  "track_total_hits": track_total_hits}
+        if query is not None:
+            kwargs["query"] = query
+        if aggs is not None:
+            kwargs["aggs"] = aggs
+        if sort is not None:
+            kwargs["sort"] = sort
+        if source is not None:
+            kwargs["source"] = source
+        try:
+            return dict(self.client.search(**kwargs))
+        except Exception as e:
+            logger.debug(f"raw_search on {index}: {e}")
+            return {}
 
     def _prepare_source(self, record: Dict[str, Any]) -> Dict[str, Any]:
         """Return a copy of a record ready to index (adds derived fields)."""
