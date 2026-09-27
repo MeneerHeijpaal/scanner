@@ -19,26 +19,41 @@ A powerful web-based HTTP reconnaissance tool that combines httpx scanning with 
 
 ```
 Scanner/
-├── Python/                      # Scanner and import scripts
+├── Python/                      # Scanners and import scripts
 │   ├── scanner.py               # httpx scanner wrapper
-│   ├── import_httpx.py          # Import scan results to MongoDB
-│   └── migrate_to_elasticsearch.py  # Index existing data in Elasticsearch
+│   ├── import_httpx.py          # Import httpx results into Elasticsearch
+│   ├── naabu_scan.py            # naabu port scanner wrapper
+│   ├── import_naabu.py          # Import naabu results into Elasticsearch
+│   ├── nuclei_scan.py           # nuclei enrichment (workflow / tech-aware)
+│   ├── import_nuclei.py         # Import nuclei findings into Elasticsearch
+│   ├── distribute_targets.py    # Shard a target list across VPS workers
+│   └── migrate_to_elasticsearch.py  # One-off: legacy MongoDB -> Elasticsearch
 ├── Server/                      # Flask web application
 │   ├── server.py                # Main application entry point
 │   ├── config.yml               # Configuration file
 │   ├── routes.py                # HTTP route handlers
-│   ├── utils.py                 # Utility functions
-│   ├── elasticsearch_manager.py # Elasticsearch integration
-│   ├── templates/               # HTML templates
-│   ├── static/                  # CSS and static assets
-│   └── labels/                  # SQLite labels database (Some hashes of httpx are already in the database)
-├── bin/                         # Location for the binaries
-├── Database/                    # Location for the MongoDB Database
-├── Elastic_Data/                # Location for the Elastic Search Database
+│   ├── utils.py                 # Utility functions + ES query builder
+│   ├── elasticsearch_manager.py # Elasticsearch data store
+│   ├── templates/ static/       # HTML templates and assets
+│   └── labels/                  # SQLite labels database
+├── nuclei-workflows/            # nuclei tech-conditional workflow + detections
+├── terraform/                   # Hetzner multi-VPS provisioning
+├── Documentation/               # Component + architecture docs
+├── bin/                         # Location for the binaries (httpx/naabu/nuclei)
+├── Elastic_Data/                # Elasticsearch data directory
 ├── httpx-config.yaml            # httpx scanner configuration
+├── ports.conf                   # naabu ports to scan
+├── nuclei.yaml                  # nuclei per-VPS settings
+├── interactsh.config            # self-hosted Interactsh server
 ├── docker-compose.yml           # Elasticsearch Docker configuration
 └── requirements.txt             # Python dependencies
 ```
+
+See [`Documentation/`](Documentation/) for full details on each component and the
+overall architecture. The scan pipeline is: **httpx** (probe) → **naabu** (ports)
+→ **nuclei** (tech-conditional enrichment, with **Interactsh** for out-of-band
+detection), all stored in **Elasticsearch**, and optionally spread across
+multiple **Hetzner** VPSes via Terraform.
 
 ## Prerequisites
 
