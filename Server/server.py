@@ -25,6 +25,7 @@ sys.path.insert(0, str(Path(__file__).parent))
 from utils import ScannerUtils
 from elasticsearch_manager import ElasticsearchManager
 import routes
+import dashboard
 
 logging.basicConfig(
     level=logging.INFO,
@@ -106,6 +107,7 @@ def create_app(config):
             f"{es.get('port', 9200)}. Please ensure Elasticsearch is running.")
         sys.exit(1)
     store.create_index()
+    store.ensure_mappings()
     logger.info(f"Elasticsearch connected; using index '{store.index_name}'")
 
     # Initialize SQLite database for hash labels.
@@ -116,6 +118,7 @@ def create_app(config):
 
     utils = ScannerUtils(config, store, sqlite_db)
     routes.register_routes(app, store, config, utils)
+    dashboard.register_dashboard_routes(app, store, config, utils)
     return app
 
 

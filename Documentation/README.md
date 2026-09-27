@@ -5,6 +5,7 @@ Technical documentation for the scanner and its major components.
 | Document | Covers |
 |----------|--------|
 | [architecture.md](architecture.md) | How all the parts fit together, the Elasticsearch data model, the indices, the Flask app, MongoDB migration, and multi-VPS distribution. **Start here.** |
+| [dashboard.md](dashboard.md) | The unified Recon Console dashboard: search syntax, the live Interactsh stream, and its JSON API. |
 | [httpx.md](httpx.md) | HTTP probing and importing records into Elasticsearch. |
 | [naabu.md](naabu.md) | Port scanning with `ports.conf` and importing port results. |
 | [nuclei.md](nuclei.md) | Tech-conditional enrichment (workflow + tech-aware modes) and `nuclei.yaml`. |
