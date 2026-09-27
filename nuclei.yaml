@@ -1,0 +1,20 @@
+# nuclei.yaml - nuclei configuration applied per VPS (nuclei -config nuclei.yaml)
+#
+# These are the standard scan settings the project applies to every VPS running
+# nuclei. Keys mirror nuclei's command-line long flags.
+
+# Number of templates executed in parallel.
+concurrency: 30
+
+# Maximum number of hosts analysed in parallel per template.
+bulk-size: 30
+
+# Maximum number of requests per second.
+rate-limit: 200
+
+# Scan strategy: spread the scan host-by-host (one host at a time, all its
+# templates) rather than template-by-template.
+scan-strategy: host-spray
+
+# Maximum response body size read per request, in bytes (8 MB = 8 * 1024 * 1024).
+response-size-read: 8388608

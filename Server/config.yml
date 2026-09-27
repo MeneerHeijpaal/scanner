@@ -43,6 +43,9 @@ elasticsearch:
   # Index name for naabu port-scan results (Python/import_naabu.py)
   ports_index: "scanner_ports"
 
+  # Index name for nuclei findings (Python/import_nuclei.py)
+  findings_index: "scanner_findings"
+
   # Connection timeout in seconds
   timeout: 30
 

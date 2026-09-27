@@ -1,0 +1,26 @@
+id: scanner-tech-conditional
+
+info:
+  name: Scanner tech-conditional enrichment workflow
+  author: scanner
+  description: |
+    Enrich URLs with nuclei templates conditionally, so a technology's templates
+    only run against URLs that actually expose that technology. Each entry runs a
+    lightweight detection template first; its subtemplates run only when the
+    detection matches.
+
+      - WordPress detected  -> run all templates tagged "wordpress"
+      - FrontPage detected  -> run CVE-2000-0114 (Microsoft FrontPage)
+
+    Extend this file with more (detect -> subtemplates) pairs as needed.
+
+workflows:
+  # Only run WordPress templates when WordPress is detected.
+  - template: nuclei-workflows/detections/wordpress-detect.yaml
+    subtemplates:
+      - tags: wordpress
+
+  # Only run the FrontPage CVE when FrontPage is detected.
+  - template: nuclei-workflows/detections/frontpage-detect.yaml
+    subtemplates:
+      - template: http/cves/2000/CVE-2000-0114.yaml
