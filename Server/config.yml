@@ -40,6 +40,9 @@ elasticsearch:
   # Index name for the full scan record (can be overridden by ES_INDEX)
   index_name: "scanner_records"
 
+  # Index name for naabu port-scan results (Python/import_naabu.py)
+  ports_index: "scanner_ports"
+
   # Connection timeout in seconds
   timeout: 30
 
