@@ -59,7 +59,7 @@ cp labels.db.backup labels.db
 To use your labels with a different MongoDB database:
 
 1. Keep the `labels/` folder with your `labels.db` file
-2. Update MongoDB connection settings in `Server/config.yml` or via environment variables
+2. Update MongoDB connection settings in `config/server-config.yaml` or via environment variables
    - `MONGO_URI` for connection string
    - `DB_NAME` for database name
    - `COLLECTION_NAME` for collection name
@@ -95,7 +95,7 @@ SELECT * FROM hash_labels ORDER BY created_at DESC LIMIT 10;
 The labels system is fully integrated into the refactored Flask application:
 
 ### Configuration
-Labels database location is defined in `Server/config.yml`:
+Labels database location is defined in `config/server-config.yaml`:
 ```yaml
 paths:
   labels_dir: "labels"

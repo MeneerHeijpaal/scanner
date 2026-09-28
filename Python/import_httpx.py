@@ -39,8 +39,8 @@ logger = logging.getLogger(__name__)
 
 
 def load_config():
-    """Load Server/config.yml (best effort). Returns a dict (possibly empty)."""
-    config_file = Path(__file__).parent.parent / 'Server' / 'config.yml'
+    """Load config/server-config.yaml (best effort). Returns a dict (possibly empty)."""
+    config_file = Path(__file__).parent.parent / 'config' / 'server-config.yaml'
     try:
         if config_file.exists():
             with open(config_file, 'r') as f:
@@ -48,7 +48,7 @@ def load_config():
             logger.info(f"Loaded configuration from {config_file}")
             return cfg
     except Exception as e:
-        logger.warning(f"Could not load config.yml: {e}")
+        logger.warning(f"Could not load config/server-config.yaml: {e}")
     return {}
 
 
@@ -112,9 +112,9 @@ def iter_records(path):
 def main():
     parser = argparse.ArgumentParser(description="Import httpx JSON output into Elasticsearch")
     parser.add_argument("-f", "--file", required=True, help="Path to the httpx JSON file")
-    parser.add_argument("--es-host", help="Elasticsearch host (overrides config.yml)")
-    parser.add_argument("--es-port", type=int, help="Elasticsearch port (overrides config.yml)")
-    parser.add_argument("--es-index", help="Elasticsearch index name (overrides config.yml)")
+    parser.add_argument("--es-host", help="Elasticsearch host (overrides config/server-config.yaml)")
+    parser.add_argument("--es-port", type=int, help="Elasticsearch port (overrides config/server-config.yaml)")
+    parser.add_argument("--es-index", help="Elasticsearch index name (overrides config/server-config.yaml)")
     parser.add_argument("--batch-size", type=int, default=1000, help="Bulk index batch size")
     args = parser.parse_args()
 

@@ -32,7 +32,7 @@ def register_routes(app, store, config, utils):
     Args:
         app: Flask application instance
         store: ElasticsearchManager instance (primary data store)
-        config: Configuration dictionary from config.yml
+        config: Configuration dictionary from config/server-config.yaml
         utils: ScannerUtils instance
     """
 

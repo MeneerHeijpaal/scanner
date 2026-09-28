@@ -48,14 +48,14 @@ INTERACTIONS_MAPPING = {
 
 
 def load_config():
-    """Load Server/config.yml (elasticsearch section) and interactsh.config."""
+    """Load config/server-config.yaml (elasticsearch section) and interactsh.config."""
     root = Path(__file__).parent.parent
     es_cfg = {}
     try:
-        cfg = yaml.safe_load((root / "Server" / "config.yml").read_text()) or {}
+        cfg = yaml.safe_load((root / "config" / "server-config.yaml").read_text()) or {}
         es_cfg = cfg.get("elasticsearch", {})
     except Exception as e:
-        logger.warning(f"Could not load config.yml: {e}")
+        logger.warning(f"Could not load server-config.yaml: {e}")
 
     server = {}
     conf = root / "config" / "interactsh.config"
@@ -91,9 +91,9 @@ def main():
     parser = argparse.ArgumentParser(description="Stream Interactsh interactions into Elasticsearch")
     parser.add_argument("--server", help="Interactsh server URL (default: interactsh.config)")
     parser.add_argument("--token", help="Interactsh server auth token, if configured")
-    parser.add_argument("--es-host", help="Elasticsearch host (default: config.yml)")
-    parser.add_argument("--es-port", type=int, help="Elasticsearch port (default: config.yml)")
-    parser.add_argument("--es-index", help="Interactions index (default: config.yml)")
+    parser.add_argument("--es-host", help="Elasticsearch host (default: config/server-config.yaml)")
+    parser.add_argument("--es-port", type=int, help="Elasticsearch port (default: config/server-config.yaml)")
+    parser.add_argument("--es-index", help="Interactions index (default: config/server-config.yaml)")
     args = parser.parse_args()
 
     root = Path(__file__).parent.parent
