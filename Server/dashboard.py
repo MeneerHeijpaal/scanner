@@ -14,6 +14,8 @@ Search syntax (parsed by ``parse_query``):
     /body:<STRING>    matches text in the decoded response body
     /title:<STRING>   matches text in the page title
     /url:<STRING>     matches text in the hostname / url
+    /ip:<STRING>      matches an IP, CIDR range (e.g. 10.0.0.0/24), or wildcard
+    /label:<STRING>   matches responses tagged with a hash label
     *                 wildcard, usable inside any of the above (e.g. wp-* )
 
 Tokens combine with AND, so ``/title:login /url:*.acme.com`` narrows to both.
@@ -25,9 +27,10 @@ import re
 
 logger = logging.getLogger(__name__)
 
-TOKEN_RE = re.compile(r'/(body|title|url):', re.IGNORECASE)
+TOKEN_RE = re.compile(r'/(body|title|url|ip|label):', re.IGNORECASE)
 SEVERITY_ORDER = ["critical", "high", "medium", "low", "info", "unknown"]
 SEVERITY_RANK = {s: i for i, s in enumerate(SEVERITY_ORDER)}
+MATCH_NONE = {"bool": {"must_not": {"match_all": {}}}}
 
 
 # --------------------------------------------------------------------------- #
@@ -40,7 +43,7 @@ def parse_query(q):
     Text before the first ``/token:`` is the general term; each ``/token:``
     captures everything up to the next token.
     """
-    parts = {"general": "", "body": "", "title": "", "url": ""}
+    parts = {"general": "", "body": "", "title": "", "url": "", "ip": "", "label": ""}
     q = (q or "").strip()
     if not q:
         return parts
@@ -86,8 +89,13 @@ def _body_clause(value):
     return {"match_phrase": {"body_decoded": value}}
 
 
-def build_record_query(parsed):
-    """ES query for the httpx records index from a parsed search."""
+def build_record_query(parsed, utils=None):
+    """ES query for the httpx records index from a parsed search.
+
+    ``utils`` (a ScannerUtils instance) is used for the ``/ip:`` clause (reusing
+    the IP/CIDR/wildcard logic) and the ``/label:`` clause (resolving a label to
+    hashes via the SQLite label store).
+    """
     filters = []
     if parsed["url"]:
         filters.append(_wildcard_over(["host", "url"], parsed["url"]))
@@ -96,6 +104,19 @@ def build_record_query(parsed):
                                                "case_insensitive": True}}})
     if parsed["body"]:
         filters.append(_body_clause(parsed["body"]))
+    if parsed.get("ip") and utils is not None:
+        clause, _err = utils._build_ip_clause(parsed["ip"])
+        if clause:
+            filters.append(clause)
+    if parsed.get("label") and utils is not None:
+        hashes = utils.get_hashes_by_label(parsed["label"])
+        if not hashes:
+            # Label requested but unknown / unused -> match nothing.
+            return MATCH_NONE
+        filters.append({"bool": {"should": [
+            {"terms": {"hash.body_sha256": hashes}},
+            {"terms": {"hash.header_sha256": hashes}},
+        ], "minimum_should_match": 1}})
     if parsed["general"]:
         g = parsed["general"]
         filters.append({"bool": {"should": [
@@ -161,16 +182,17 @@ def register_dashboard_routes(app, store, config, utils):
     def _q():
         return utils.sanitize_string_input(request.args.get("q", ""), max_length=500)
 
+    @app.route("/")
     @app.route("/dashboard")
     def dashboard_page():
-        """Render the unified recon dashboard."""
+        """Render the unified recon dashboard (the default landing page)."""
         return render_template("dashboard.html")
 
     @app.route("/api/dashboard/summary")
     def dashboard_summary():
         """KPIs, severity distribution, top technologies, and body-match count."""
         parsed = parse_query(_q())
-        rq = build_record_query(parsed)
+        rq = build_record_query(parsed, utils)
 
         rec = store.raw_search(IDX_RECORDS, query=rq, size=0, aggs={
             "assets": {"cardinality": {"field": "host"}},
@@ -247,7 +269,7 @@ def register_dashboard_routes(app, store, config, utils):
     def dashboard_assets():
         """Assets table: records joined with per-host port and finding counts."""
         parsed = parse_query(_q())
-        rq = build_record_query(parsed)
+        rq = build_record_query(parsed, utils)
 
         rec = store.raw_search(IDX_RECORDS, query=rq, size=0, aggs={
             "hosts": {"terms": {"field": "host", "size": 200, "order": {"_count": "desc"}},
@@ -320,6 +342,7 @@ def register_dashboard_routes(app, store, config, utils):
         for h in _dig(web, "hits.hits") or []:
             s = h["_source"]
             endpoints.append({
+                "id": h["_id"],
                 "url": s.get("url", ""),
                 "status": s.get("status_code", ""),
                 "title": s.get("title", ""),
@@ -348,6 +371,68 @@ def register_dashboard_routes(app, store, config, utils):
         finding_rows.sort(key=lambda r: SEVERITY_RANK.get(r["severity"], 99))
         return jsonify({"host": host, "endpoints": endpoints,
                         "ports": port_rows, "findings": finding_rows})
+
+    @app.route("/api/dashboard/record")
+    def dashboard_record():
+        """Full detail for a single httpx record (the per-URL detail view)."""
+        doc_id = utils.validate_doc_id(request.args.get("id", ""))
+        if not doc_id:
+            return jsonify({"error": "invalid id"}), 400
+        item = store.get(doc_id)
+        if not item:
+            return jsonify({"error": "not found"}), 404
+
+        item = utils.decode_base64_fields(item)
+        h = item.get("hash", {}) or {}
+        body_hash, header_hash = h.get("body_sha256"), h.get("header_sha256")
+
+        body_count = store.count({"term": {"hash.body_sha256": body_hash}}) if body_hash else 0
+        header_count = store.count({"term": {"hash.header_sha256": header_hash}}) if header_hash else 0
+
+        header = item.get("header", {}) or {}
+        redirect_location = None
+        status_code = item.get("status_code")
+        if status_code and 300 <= status_code < 400 and isinstance(header, dict):
+            redirect_location = header.get("location") or header.get("Location")
+
+        ip_count = 0
+        host = item.get("host") or item.get("ip")
+        if host:
+            ip_count = store.count({"bool": {"should": [
+                {"term": {"ip": host}}, {"term": {"host": host}},
+            ], "minimum_should_match": 1}})
+
+        return jsonify({
+            "id": item.get("_id"),
+            "url": item.get("url", ""),
+            "redirect_location": redirect_location,
+            "host": item.get("host", ""),
+            "ip_count": ip_count,
+            "timestamp": item.get("timestamp", ""),
+            "status_code": status_code,
+            "method": item.get("method", ""),
+            "scheme": item.get("scheme", ""),
+            "port": item.get("port", ""),
+            "path": item.get("path", ""),
+            "content_type": item.get("content_type", ""),
+            "content_length": item.get("content_length", ""),
+            "time": item.get("time", ""),
+            "body_sha256": body_hash, "header_sha256": header_hash,
+            "body_count": body_count, "header_count": header_count,
+            "body_label": utils.get_hash_label(body_hash) if body_hash else None,
+            "header_label": utils.get_hash_label(header_hash) if header_hash else None,
+            "input": item.get("input", ""),
+            "a": item.get("a", []) or [],
+            "cname": item.get("cname", []) or [],
+            "tech": item.get("tech", []) or [],
+            "words": item.get("words", ""),
+            "lines": item.get("lines", ""),
+            "knowledgebase": item.get("knowledgebase", {}) or {},
+            "header": header if isinstance(header, dict) else {},
+            "body_decoded": item.get("body_decoded", ""),
+            "has_raw_header": bool(item.get("raw_header")),
+            "has_request": bool(item.get("request")),
+        })
 
     @app.route("/api/dashboard/interactions")
     def dashboard_interactions():

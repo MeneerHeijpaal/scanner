@@ -71,9 +71,13 @@ def register_routes(app, store, config, utils):
         return send_from_directory(app.static_folder, 'favicon.ico',
                                    mimetype='image/vnd.microsoft.icon')
 
-    @app.route('/', methods=['GET'])
+    @app.route('/search', methods=['GET'])
     def index():
-        """Main search page with live counter and filter interface."""
+        """Classic search page with live counter and filter interface.
+
+        The unified Recon Console dashboard is the landing page at ``/``; this
+        classic search UI remains available at ``/search`` and still powers the
+        per-URL detail pages (``/details/<id>``)."""
         try:
             total_urls = store.count(MATCH_ALL)
             all_labels = utils.get_all_labels()

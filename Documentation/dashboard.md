@@ -5,9 +5,12 @@ produced by the toolchain into one view, organized around the *asset* (host):
 click any host and see its web endpoints (httpx), open ports (naabu), findings
 (nuclei) and out-of-band interactions (Interactsh) together.
 
-It is served by the same Flask app as the search UI.
+It is served by the same Flask app as the search UI, and is the **default landing
+page**. The classic search UI remains available at `/search` and still powers the
+per-URL detail pages (`/details/<id>`).
 
-- **Page:** `GET /dashboard`
+- **Page:** `GET /` (also `GET /dashboard`)
+- **Classic search:** `GET /search`
 - **Code:** `Server/dashboard.py` (routes + search parsing), `Server/templates/dashboard.html` (UI)
 
 ## Data sources
@@ -29,6 +32,8 @@ host, URL and page title. Prefix tokens narrow the search:
 | `/body:<STRING>` | text in the decoded response body |
 | `/title:<STRING>` | text in the page title |
 | `/url:<STRING>` | text in the hostname / URL |
+| `/ip:<STRING>` | an IP, CIDR range (e.g. `10.0.0.0/24`), or wildcard (`185.135.13.*`) |
+| `/label:<STRING>` | responses tagged with a hash label (SQLite label store) |
 | `*` | wildcard, usable inside any token or plain text (e.g. `wp-*`, `/url:*.acme.com`) |
 
 Tokens combine with AND: `/title:login /url:shop.acme.com` narrows to both.
@@ -43,6 +48,10 @@ Behaviour:
   other active filters). It is hidden when no body search is set.
 - **External-link icons** — an open-in-new-tab icon sits to the right of each URL
   in the **Assets** table and in the **Web endpoints** section of the asset drawer.
+- **Full record detail** — clicking a URL in the drawer's **Web endpoints** opens
+  the complete per-URL detail (basic info, request/response metadata, content
+  hashes, network info, technologies, raw-data downloads, response headers and the
+  decoded body) — the same data as the classic `/details/<id>` page, in the drawer.
 
 ## Live Interactsh stream
 
@@ -70,6 +79,7 @@ All endpoints accept the `q` search parameter described above.
 | `GET /api/dashboard/assets` | assets joined with per-host port/finding counts |
 | `GET /api/dashboard/ports` | open ports / services |
 | `GET /api/dashboard/asset?host=<host>` | one host's endpoints, ports and findings (drawer) |
+| `GET /api/dashboard/record?id=<id>` | full detail for one httpx record (per-URL detail view) |
 | `GET /api/dashboard/interactions?after=<ts>` | Interactsh interactions newer than a cursor |
 
 ## Notes
