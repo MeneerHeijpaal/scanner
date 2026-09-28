@@ -170,13 +170,15 @@ def run_tech_aware(nuclei, repo_root, interactsh, output_file, config):
         key = (frozenset(tags), frozenset(templates))
         groups.setdefault(key, []).append(url)
 
+    final = Path(output_file)
+    final.write_text('')  # always create the output file (empty = ran, no findings)
+
     if not groups:
-        logger.warning("No URLs with a mapped technology found in Elasticsearch")
+        logger.warning("No URLs with a mapped technology found in Elasticsearch; "
+                       f"wrote empty {final}")
         return 0
 
     logger.info(f"Prepared {len(groups)} technology group(s) for scanning")
-    final = Path(output_file)
-    final.write_text('')  # start empty; append each group's results
 
     rc = 0
     for (tags, templates), urls in groups.items():
