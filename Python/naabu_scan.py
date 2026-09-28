@@ -182,9 +182,13 @@ def main():
                 pass
 
     if args.do_import:
-        logger.info("Importing naabu results into Elasticsearch...")
-        import_script = repo_root / 'Python' / 'import_naabu.py'
-        subprocess.run([sys.executable, str(import_script), '-f', str(output_file)], check=False)
+        if output_file.exists() and output_file.stat().st_size > 0:
+            logger.info("Importing naabu results into Elasticsearch...")
+            import_script = repo_root / 'Python' / 'import_naabu.py'
+            subprocess.run([sys.executable, str(import_script), '-f', str(output_file)], check=False)
+        else:
+            logger.info(f"No naabu results to import ({output_file.name} missing or empty); "
+                        "skipping import")
 
 
 if __name__ == '__main__':
