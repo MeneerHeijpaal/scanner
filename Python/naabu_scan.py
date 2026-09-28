@@ -6,7 +6,6 @@ from a URL/host list, using the ports defined in ports.conf.
 The scan is run according to the project's rules:
   -sD                 service discovery
   -sV                 service version detection
-  -sV-timeout 8       service-version detection timeout (seconds)
   -retries 4          retry unanswered probes 4 times
   -timeout 1200       per-probe timeout (milliseconds)
   -scan-all-ips       scan every resolved IP for a host
@@ -114,7 +113,6 @@ def run_naabu(naabu: Path, host_file: Path, ports: str, output_file: Path):
         '-port', ports,
         '-sD',
         '-sV',
-        '-sV-timeout', '8',
         '-retries', '4',
         '-timeout', '1200',
         '-scan-all-ips',
