@@ -46,7 +46,6 @@ naabu. It then runs naabu with the project's standard switches:
 naabu -list <hosts> -port <ports.conf> \
       -sD \                 # service discovery
       -sV \                 # service version detection
-      -sV-timeout 8 \       # service-version timeout (seconds)
       -retries 4 \          # retry unanswered probes 4 times
       -timeout 1200 \       # per-probe timeout (milliseconds)
       -scan-all-ips \       # scan every resolved IP of a host
