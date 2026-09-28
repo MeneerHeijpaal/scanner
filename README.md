@@ -27,12 +27,14 @@ filtering over the results.
 ```
 Scanner/
 ├── Python/                      # Scanners and import scripts
+│   ├── scan.py                  # Pipeline orchestrator (httpx -> naabu -> nuclei, + ingest)
 │   ├── scanner.py               # httpx scanner wrapper
 │   ├── import_httpx.py          # Import httpx results into Elasticsearch
 │   ├── naabu_scan.py            # naabu port scanner wrapper
 │   ├── import_naabu.py          # Import naabu results into Elasticsearch
 │   ├── nuclei_scan.py           # nuclei enrichment (workflow / tech-aware)
 │   ├── import_nuclei.py         # Import nuclei findings into Elasticsearch
+│   ├── interactsh_stream.py     # Stream Interactsh interactions into Elasticsearch
 │   ├── distribute_targets.py    # Shard a target list across VPS workers
 │   └── migrate_to_elasticsearch.py  # One-off: legacy MongoDB -> Elasticsearch
 ├── Server/                      # Flask web application
@@ -144,9 +146,29 @@ is no manual index setup.
 
 ## Quick Start
 
+### One command (recommended)
+
+`Python/scan.py` runs the whole pipeline — httpx → naabu → nuclei — and ingests
+each stage into Elasticsearch:
+
 ```bash
 source .venv/bin/activate
 
+python3 Python/scan.py -l urls.txt        # one URL/host per line
+# then browse results:
+python3 Server/server.py                  # http://127.0.0.1:8001/dashboard
+```
+
+Useful flags: `--skip-naabu` / `--skip-nuclei` / `--skip-httpx` to run a subset,
+`--nuclei-mode workflow` to run the workflow instead of the tech-aware mode, and
+`--no-import` to scan without ingesting. Output for each run is written to a
+`scan-<timestamp>/` folder.
+
+### Step by step
+
+If you prefer to run each stage yourself:
+
+```bash
 # 1. Probe targets with httpx (one URL/host per line in urls.txt)
 python3 Python/scanner.py -f urls.txt -o results.json
 

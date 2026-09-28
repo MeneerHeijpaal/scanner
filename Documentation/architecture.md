@@ -50,6 +50,10 @@ of naabu, nuclei, Interactsh, and multi-VPS distribution.
 - httpx produces the base records. naabu adds open-port/service data. nuclei
   reads the technologies httpx detected and enriches only the URLs that matter,
   confirming blind issues via Interactsh.
+- **`Python/scan.py` runs this whole pipeline in one command** — httpx → naabu →
+  nuclei, importing each stage into Elasticsearch — by orchestrating the per-tool
+  scripts. Each tool remains usable on its own; `scan.py` just chains them (with
+  `--skip-*`, `--nuclei-mode` and `--no-import` flags).
 - Every stage writes to Elasticsearch through an idempotent, keyed upsert, so
   re-running a stage updates existing documents instead of duplicating them.
 
