@@ -73,12 +73,12 @@ is the best starting point.
 - **Python 3.8+**
 - **Elasticsearch 8.x** — the primary and only runtime data store
 - **Docker** (recommended, for running Elasticsearch)
-- **httpx** binary ([releases](https://github.com/projectdiscovery/httpx/releases))
+- **httpx** binary ([releases](https://github.com/projectdiscovery/httpx/releases)) — web probing
+- **naabu** binary ([releases](https://github.com/projectdiscovery/naabu/releases)) — port scanning. Needs `libpcap` for SYN scans.
+- **nuclei** binary ([releases](https://github.com/projectdiscovery/nuclei/releases)) — enrichment.
 
 ### Optional (per feature)
 
-- **naabu** binary ([releases](https://github.com/projectdiscovery/naabu/releases)) — port scanning. Needs `libpcap` for SYN scans.
-- **nuclei** binary ([releases](https://github.com/projectdiscovery/nuclei/releases)) — enrichment.
 - **Interactsh** server — for nuclei out-of-band detection (see [`Documentation/interactsh.md`](Documentation/interactsh.md)).
 - **Terraform** + a **Hetzner Cloud** account — for multi-VPS distribution.
 - **MongoDB 4.4+** — only to migrate legacy data into Elasticsearch via `Python/migrate_to_elasticsearch.py`. Not used at runtime.
@@ -99,17 +99,33 @@ cd scanner
 
 ### 2. Install the ProjectDiscovery binaries
 
-Place the binaries in `bin/` (they are gitignored) or anywhere on your `PATH`.
-The wrappers look in `./`, `./bin/`, then `PATH`.
+httpx, naabu and nuclei are all required. Place the binaries in `bin/` (they are
+gitignored) or anywhere on your `PATH`; the wrappers look in `./`, `./bin/`, then
+`PATH`. Download the right build for your OS/arch from each releases page.
 
 ```bash
-# httpx (required)
+# naabu SYN scanning needs libpcap (Debian/Ubuntu):
+sudo apt-get install -y libpcap-dev
+
+# httpx
 wget https://github.com/projectdiscovery/httpx/releases/download/v1.6.9/httpx_1.6.9_linux_amd64.zip
 unzip httpx_1.6.9_linux_amd64.zip && mv httpx bin/ && chmod +x bin/httpx
 
-# naabu (optional) and nuclei (optional) — install the same way from their releases pages.
-# On Debian/Ubuntu, naabu SYN scanning needs libpcap:  sudo apt-get install -y libpcap-dev
+# naabu
+wget https://github.com/projectdiscovery/naabu/releases/download/v2.3.3/naabu_2.3.3_linux_amd64.zip
+unzip naabu_2.3.3_linux_amd64.zip && mv naabu bin/ && chmod +x bin/naabu
+
+# nuclei
+wget https://github.com/projectdiscovery/nuclei/releases/download/v3.3.7/nuclei_3.3.7_linux_amd64.zip
+unzip nuclei_3.3.7_linux_amd64.zip && mv nuclei bin/ && chmod +x bin/nuclei
+
+# fetch the nuclei template collection (first run also does this)
+./bin/nuclei -update-templates
 ```
+
+> Version numbers above are examples — check each releases page for the latest.
+> If you also want the live Interactsh stream, install `interactsh-client` the
+> same way (see [`Documentation/interactsh.md`](Documentation/interactsh.md)).
 
 ### 3. Set up the Python environment
 

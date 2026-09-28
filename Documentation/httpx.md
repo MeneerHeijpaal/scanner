@@ -12,7 +12,7 @@ etc.). httpx is the primary source of records in the scanner.
 | `Python/scanner.py` | Wrapper that runs the bundled `httpx` binary over a URL file or single URL. |
 | `config/httpx-config.yaml` | httpx scan configuration (tech detection, threads, rate limit, etc.). |
 | `Python/import_httpx.py` | Imports httpx JSON output into Elasticsearch. |
-| `bin/httpx` | The httpx binary (downloaded by the user; gitignored). |
+| `bin/httpx` | The httpx binary — **required**; install per README step 2 (gitignored). |
 
 ## Running a scan
 
