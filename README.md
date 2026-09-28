@@ -99,33 +99,46 @@ cd scanner
 
 ### 2. Install the ProjectDiscovery binaries
 
-httpx, naabu and nuclei are all required. Place the binaries in `bin/` (they are
-gitignored) or anywhere on your `PATH`; the wrappers look in `./`, `./bin/`, then
-`PATH`. Download the right build for your OS/arch from each releases page.
+httpx, naabu and nuclei are all required. The `install_tools.sh` script downloads
+the latest release of each and installs them into `./bin/` (which is gitignored):
 
 ```bash
-# naabu SYN scanning needs libpcap (Debian/Ubuntu):
-sudo apt-get install -y libpcap-dev
+./install_tools.sh
+```
 
-# httpx
-wget https://github.com/projectdiscovery/httpx/releases/download/v1.6.9/httpx_1.6.9_linux_amd64.zip
-unzip httpx_1.6.9_linux_amd64.zip && mv httpx bin/ && chmod +x bin/httpx
+**Set the `PLATFORM` variable in `install_tools.sh` to match your OS/arch** before
+running it. It defaults to `macOS_arm64`; change it to whatever the releases pages
+use for your system, for example:
 
-# naabu
-wget https://github.com/projectdiscovery/naabu/releases/download/v2.3.3/naabu_2.3.3_linux_amd64.zip
-unzip naabu_2.3.3_linux_amd64.zip && mv naabu bin/ && chmod +x bin/naabu
+| System | `PLATFORM` value |
+|--------|------------------|
+| macOS (Apple Silicon) | `macOS_arm64` |
+| macOS (Intel) | `macOS_amd64` |
+| Linux (x86-64) | `linux_amd64` |
+| Linux (ARM64) | `linux_arm64` |
+| Windows (x86-64) | `windows_amd64` |
 
-# nuclei
-wget https://github.com/projectdiscovery/nuclei/releases/download/v3.3.7/nuclei_3.3.7_linux_amd64.zip
-unzip nuclei_3.3.7_linux_amd64.zip && mv nuclei bin/ && chmod +x bin/nuclei
+> **Windows users:** these are shell scripts (`install_tools.sh`, `.envrc`, the
+> `Python/*.py` wrappers call the tools directly), so run them under **WSL**
+> (Windows Subsystem for Linux). Set `PLATFORM=linux_amd64` inside WSL, or
+> `windows_amd64` if you install the native Windows binaries.
 
-# fetch the nuclei template collection (first run also does this)
+The script needs `curl` and `unzip`. After it runs, fetch the nuclei templates
+(the first nuclei run also does this):
+
+```bash
 ./bin/nuclei -update-templates
 ```
 
-> Version numbers above are examples — check each releases page for the latest.
-> If you also want the live Interactsh stream, install `interactsh-client` the
-> same way (see [`Documentation/interactsh.md`](Documentation/interactsh.md)).
+Prefer to install manually? Download the matching build for your OS/arch from each
+releases page ([httpx](https://github.com/projectdiscovery/httpx/releases),
+[naabu](https://github.com/projectdiscovery/naabu/releases),
+[nuclei](https://github.com/projectdiscovery/nuclei/releases)) and drop the
+binaries in `bin/` (the wrappers look in `./`, `./bin/`, then `PATH`).
+
+> naabu SYN scanning needs `libpcap` (Debian/Ubuntu: `sudo apt-get install -y libpcap-dev`).
+> For the live Interactsh stream, install `interactsh-client` the same way
+> (see [`Documentation/interactsh.md`](Documentation/interactsh.md)).
 
 ### 3. Set up the Python environment
 
