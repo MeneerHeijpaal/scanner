@@ -73,6 +73,7 @@ is the best starting point.
 - **Python 3.8+**
 - **Elasticsearch 8.x** — the primary and only runtime data store
 - **Docker** (recommended, for running Elasticsearch)
+- **Nmap** (mandatory, for use with naabu)
 - **httpx** binary ([releases](https://github.com/projectdiscovery/httpx/releases)) — web probing
 - **naabu** binary ([releases](https://github.com/projectdiscovery/naabu/releases)) — port scanning. Needs `libpcap` for SYN scans.
 - **nuclei** binary ([releases](https://github.com/projectdiscovery/nuclei/releases)) — enrichment.
