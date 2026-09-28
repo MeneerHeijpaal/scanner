@@ -58,7 +58,7 @@ def load_config():
         logger.warning(f"Could not load config.yml: {e}")
 
     server = {}
-    conf = root / "interactsh.config"
+    conf = root / "config" / "interactsh.config"
     if conf.exists():
         for raw in conf.read_text().splitlines():
             line = raw.split("#", 1)[0].strip()

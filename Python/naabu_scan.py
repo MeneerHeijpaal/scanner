@@ -140,13 +140,13 @@ def main():
     group.add_argument('-l', '--list', help='File of URLs/hosts (one per line)')
     group.add_argument('-host', '--host', dest='host', help='Single host/IP/CIDR to scan')
     parser.add_argument('-o', '--output', required=True, help='Output JSON file')
-    parser.add_argument('-c', '--ports-conf', help='Path to ports.conf (default: repo root)')
+    parser.add_argument('-c', '--ports-conf', help='Path to ports.conf (default: config/ports.conf)')
     parser.add_argument('--import', dest='do_import', action='store_true',
                         help='Import results into Elasticsearch after scanning')
     args = parser.parse_args()
 
     repo_root = Path(__file__).resolve().parents[1]
-    ports_conf = Path(args.ports_conf) if args.ports_conf else repo_root / 'ports.conf'
+    ports_conf = Path(args.ports_conf) if args.ports_conf else repo_root / 'config' / 'ports.conf'
     if not ports_conf.exists():
         logger.error(f"ports.conf not found at {ports_conf}")
         sys.exit(2)

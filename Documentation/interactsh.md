@@ -14,7 +14,7 @@ your control.
 
 | File | Purpose |
 |------|---------|
-| `interactsh.config` | The server URL and IP used by the nuclei runner. |
+| `config/interactsh.config` | The server URL and IP used by the nuclei runner. |
 
 ## interactsh.config
 
