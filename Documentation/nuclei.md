@@ -15,7 +15,7 @@ only against URLs that actually expose that technology.
 | `nuclei-workflows/detections/*.yaml` | Lightweight detection templates gating the workflow. |
 | `Python/nuclei_scan.py` | Runner (workflow mode and tech-aware mode). |
 | `Python/import_nuclei.py` | Imports nuclei findings into Elasticsearch. |
-| `bin/nuclei` | The nuclei binary (downloaded by the user; gitignored). |
+| `bin/nuclei` | The nuclei binary — **required**; install per README step 2 (gitignored). |
 
 ## nuclei.yaml (per-VPS settings)
 
