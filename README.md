@@ -53,7 +53,7 @@ Scanner/
 ├── nuclei-workflows/            # nuclei tech-conditional workflow + detections
 ├── terraform/                   # Hetzner multi-VPS provisioning
 ├── Documentation/               # Component + architecture docs
-├── bin/                         # Location for the binaries (httpx/naabu/nuclei)
+├── bin/                         # Location for the binaries (httpx/naabu/nuclei/interactsh-client)
 ├── Elastic_Data/                # Elasticsearch data directory
 ├── docker-compose.yml           # Elasticsearch Docker configuration
 └── requirements.txt             # Python dependencies
@@ -100,8 +100,9 @@ cd scanner
 
 ### 2. Install the ProjectDiscovery binaries
 
-httpx, naabu and nuclei are all required. The `install_tools.sh` script downloads
-the latest release of each and installs them into `./bin/` (which is gitignored):
+httpx, naabu and nuclei are all required, plus `interactsh-client` for the live
+Interactsh stream. The `install_tools.sh` script downloads the latest release of
+each and installs them into `./bin/` (which is gitignored):
 
 ```bash
 ./install_tools.sh
@@ -134,11 +135,12 @@ The script needs `curl` and `unzip`. After it runs, fetch the nuclei templates
 Prefer to install manually? Download the matching build for your OS/arch from each
 releases page ([httpx](https://github.com/projectdiscovery/httpx/releases),
 [naabu](https://github.com/projectdiscovery/naabu/releases),
-[nuclei](https://github.com/projectdiscovery/nuclei/releases)) and drop the
+[nuclei](https://github.com/projectdiscovery/nuclei/releases),
+[interactsh](https://github.com/projectdiscovery/interactsh/releases)) and drop the
 binaries in `bin/` (the wrappers look in `./`, `./bin/`, then `PATH`).
 
 > naabu SYN scanning needs `libpcap` (Debian/Ubuntu: `sudo apt-get install -y libpcap-dev`).
-> For the live Interactsh stream, install `interactsh-client` the same way
+> `interactsh-client` powers the live Interactsh stream
 > (see [`Documentation/interactsh.md`](Documentation/interactsh.md)).
 
 ### 3. Set up the Python environment
