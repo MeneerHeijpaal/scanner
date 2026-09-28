@@ -16,8 +16,8 @@ Two modes:
      the matching template tags/paths. This guarantees "only WordPress templates
      on WordPress URLs" using real detection data and avoids wasted requests.
 
-Both modes apply nuclei.yaml (per-VPS settings) and the Interactsh server from
-interactsh.config.
+Both modes apply nuclei-config.yaml (per-VPS settings) and the Interactsh server
+from interactsh.config.
 
 Usage:
   python3 Python/nuclei_scan.py -l urls.txt -o findings.json
@@ -97,7 +97,7 @@ def read_interactsh(config_path: Path):
 def base_nuclei_cmd(nuclei: Path, repo_root: Path, interactsh: dict, output_file: Path):
     """Build the common nuclei argument list (config + interactsh + JSON out)."""
     cmd = [str(nuclei), '-disable-update-check', '-j', '-o', str(output_file)]
-    nuclei_cfg = repo_root / 'config' / 'nuclei.yaml'
+    nuclei_cfg = repo_root / 'config' / 'nuclei-config.yaml'
     if nuclei_cfg.exists():
         cmd += ['-config', str(nuclei_cfg)]
     server_url = interactsh.get('server_url')
@@ -229,7 +229,7 @@ def main():
 
     if args.from_elasticsearch:
         import yaml
-        config_file = repo_root / 'Server' / 'config.yml'
+        config_file = repo_root / 'config' / 'server-config.yaml'
         config = yaml.safe_load(config_file.read_text()) if config_file.exists() else {}
         run_tech_aware(nuclei, repo_root, interactsh, output_file, config)
     else:

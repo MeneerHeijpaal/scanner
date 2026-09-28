@@ -8,7 +8,7 @@ Technical documentation for the scanner and its major components.
 | [dashboard.md](dashboard.md) | The unified Recon Console dashboard: search syntax, the live Interactsh stream, and its JSON API. |
 | [httpx.md](httpx.md) | HTTP probing and importing records into Elasticsearch. |
 | [naabu.md](naabu.md) | Port scanning with `ports.conf` and importing port results. |
-| [nuclei.md](nuclei.md) | Tech-conditional enrichment (workflow + tech-aware modes) and `nuclei.yaml`. |
+| [nuclei.md](nuclei.md) | Tech-conditional enrichment (workflow + tech-aware modes) and `nuclei-config.yaml`. |
 | [interactsh.md](interactsh.md) | The self-hosted out-of-band interaction server used by nuclei. |
 
 ## Quick map of the moving parts

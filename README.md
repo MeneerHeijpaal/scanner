@@ -39,16 +39,16 @@ Scanner/
 │   └── migrate_to_elasticsearch.py  # One-off: legacy MongoDB -> Elasticsearch
 ├── Server/                      # Flask web application
 │   ├── server.py                # Main application entry point
-│   ├── config.yml               # Configuration file
 │   ├── routes.py                # HTTP route handlers
 │   ├── utils.py                 # Utility functions + ES query builder
 │   ├── elasticsearch_manager.py # Elasticsearch data store
 │   ├── templates/ static/       # HTML templates and assets
 │   └── labels/                  # SQLite labels database
-├── config/                      # Tool configuration files
+├── config/                      # Configuration files
+│   ├── server-config.yaml       # Flask / Elasticsearch app configuration
 │   ├── httpx-config.yaml        # httpx scanner configuration
 │   ├── ports.conf               # naabu ports to scan
-│   ├── nuclei.yaml              # nuclei per-VPS settings
+│   ├── nuclei-config.yaml       # nuclei per-VPS settings
 │   └── interactsh.config        # self-hosted Interactsh server
 ├── nuclei-workflows/            # nuclei tech-conditional workflow + detections
 ├── terraform/                   # Hetzner multi-VPS provisioning
@@ -237,8 +237,8 @@ python3 Python/nuclei_scan.py --from-elasticsearch -o findings.json --import
 python3 Python/nuclei_scan.py -l urls.txt -o findings.json --import
 ```
 
-`config/nuclei.yaml` holds the per-VPS settings and `config/interactsh.config` the
-out-of-band server. See [`Documentation/nuclei.md`](Documentation/nuclei.md) and
+`config/nuclei-config.yaml` holds the per-VPS settings and `config/interactsh.config`
+the out-of-band server. See [`Documentation/nuclei.md`](Documentation/nuclei.md) and
 [`Documentation/interactsh.md`](Documentation/interactsh.md).
 
 ### Migrate legacy MongoDB data (one-off)
@@ -252,7 +252,7 @@ python3 Python/migrate_to_elasticsearch.py --batch-size 1000   # slower systems
 
 ## Configuration
 
-### Server configuration (`Server/config.yml`)
+### Server configuration (`config/server-config.yaml`)
 
 ```yaml
 flask:
@@ -283,14 +283,13 @@ Environment overrides: `SECRET_KEY`, `ES_HOST`, `ES_PORT`, `ES_INDEX`, `FLASK_DE
 
 ### Tool configuration (`config/`)
 
-All tool configuration lives in the `config/` folder:
+All configuration lives in the `config/` folder:
 
+- `config/server-config.yaml` — the Flask / Elasticsearch app configuration (shown above).
 - `config/httpx-config.yaml` — httpx settings (tech detection, threads, rate limit, follow-redirects, etc.); `Python/scanner.py` always runs httpx with this file. See the [httpx docs](https://github.com/projectdiscovery/httpx).
 - `config/ports.conf` — ports naabu scans.
-- `config/nuclei.yaml` — per-VPS nuclei settings (concurrency 30, bulk-size 30, rate-limit 200, `scan-strategy: host-spray`, `response-size-read` 8 MB).
+- `config/nuclei-config.yaml` — per-VPS nuclei settings (concurrency 30, bulk-size 30, rate-limit 200, `scan-strategy: host-spray`, `response-size-read` 8 MB).
 - `config/interactsh.config` — `server_url` and `server_ip` for the out-of-band server.
-
-(`Server/config.yml` above is the Flask/Elasticsearch app configuration, separate from these tool files.)
 
 ## Command Reference
 
@@ -342,7 +341,7 @@ python3 Python/distribute_targets.py -f targets.txt --workers 3 \
 ```
 
 All workers ingest into the same Elasticsearch, so their results appear together
-in the UI. `nuclei.yaml` limits apply per worker, so throughput scales with
+in the UI. `nuclei-config.yaml` limits apply per worker, so throughput scales with
 `worker_count`. See [`Documentation/architecture.md`](Documentation/architecture.md).
 
 ## Web Interface Features
@@ -386,7 +385,7 @@ docker compose down && sudo rm -rf Elastic_Data/* && chmod 777 Elastic_Data && d
 
 ```bash
 curl http://localhost:9200                 # is it up?
-# confirm elasticsearch.host/port in Server/config.yml (or ES_HOST/ES_PORT), then restart the server
+# confirm elasticsearch.host/port in config/server-config.yaml (or ES_HOST/ES_PORT), then restart the server
 ```
 
 **naabu needs privileges** — SYN scanning requires `libpcap` and root/`CAP_NET_RAW`;

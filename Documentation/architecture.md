@@ -122,7 +122,7 @@ in SQLite, then filter records by those hashes in Elasticsearch.
 `Python/migrate_to_elasticsearch.py` is a one-off tool: it reads the **full**
 records from the old MongoDB collection and indexes them into `scanner_records`
 (keyed by URL, so it is idempotent). Run it once after standing up
-Elasticsearch, then retire MongoDB. The `mongodb:` section in `config.yml` is
+Elasticsearch, then retire MongoDB. The `mongodb:` section in `config/server-config.yaml` is
 read only by this script; `pymongo` in `requirements.txt` is needed only for it.
 
 ## Distributing load across VPSes (Terraform + Hetzner)
@@ -141,7 +141,7 @@ read only by this script; `pymongo` in `requirements.txt` is needed only for it.
 
 `terraform.tfvars` holds the `hcloud_token` and is **gitignored** — it is never
 committed. Copy `terraform.tfvars.example` to `terraform.tfvars` and fill it in.
-`nuclei.yaml` limits (concurrency 30, bulk-size 30, rate-limit 200) are applied
+`nuclei-config.yaml` limits (concurrency 30, bulk-size 30, rate-limit 200) are applied
 **per worker**, so total throughput scales with `worker_count`.
 
 ```
@@ -158,7 +158,7 @@ committed. Copy `terraform.tfvars.example` to `terraform.tfvars` and fill it in.
                  Flask UI
 ```
 
-## Configuration summary (`Server/config.yml`)
+## Configuration summary (`config/server-config.yaml`)
 
 - `elasticsearch.*` — host/port, `index_name`, `ports_index`, `findings_index`,
   result window, and body-index cap. Env overrides: `ES_HOST`, `ES_PORT`,

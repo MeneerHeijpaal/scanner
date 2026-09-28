@@ -7,7 +7,7 @@ interface for searching and analyzing scan results stored in Elasticsearch.
 As of the MongoDB -> Elasticsearch migration, Elasticsearch is the single data
 store. Hash labels are still kept in a local SQLite database.
 
-Configuration is loaded from config.yml. Routes are defined in routes.py.
+Configuration is loaded from config/server-config.yaml. Routes are defined in routes.py.
 Utility functions are in utils.py.
 """
 
@@ -35,13 +35,15 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
-def load_config(config_path='config.yml'):
+def load_config(config_path='server-config.yaml'):
     """Load configuration from YAML with environment variable overrides.
+
+    The app configuration lives in ``config/server-config.yaml`` at the repo root.
 
     Environment overrides:
         SECRET_KEY, ES_HOST, ES_PORT, ES_INDEX, FLASK_DEBUG
     """
-    config_file = Path(__file__).parent / config_path
+    config_file = Path(__file__).parent.parent / 'config' / config_path
     try:
         with open(config_file, 'r') as f:
             config = yaml.safe_load(f)

@@ -39,8 +39,8 @@ logger = logging.getLogger(__name__)
 
 
 def load_config():
-    """Load Server/config.yml. Exits on failure."""
-    config_file = Path(__file__).parent.parent / 'Server' / 'config.yml'
+    """Load config/server-config.yaml. Exits on failure."""
+    config_file = Path(__file__).parent.parent / 'config' / 'server-config.yaml'
     try:
         with open(config_file, 'r') as f:
             return yaml.safe_load(f)

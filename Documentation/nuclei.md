@@ -9,7 +9,7 @@ only against URLs that actually expose that technology.
 
 | File | Purpose |
 |------|---------|
-| `config/nuclei.yaml` | Per-VPS nuclei settings applied to every run. |
+| `config/nuclei-config.yaml` | Per-VPS nuclei settings applied to every run. |
 | `config/interactsh.config` | Self-hosted Interactsh server (see [interactsh.md](interactsh.md)). |
 | `nuclei-workflows/tech-conditional-workflow.yaml` | Native nuclei workflow (detect → run matching templates). |
 | `nuclei-workflows/detections/*.yaml` | Lightweight detection templates gating the workflow. |
@@ -17,9 +17,9 @@ only against URLs that actually expose that technology.
 | `Python/import_nuclei.py` | Imports nuclei findings into Elasticsearch. |
 | `bin/nuclei` | The nuclei binary — **required**; install per README step 2 (gitignored). |
 
-## nuclei.yaml (per-VPS settings)
+## nuclei-config.yaml (per-VPS settings)
 
-Applied via `nuclei -config config/nuclei.yaml`:
+Applied via `nuclei -config config/nuclei-config.yaml`:
 
 | Setting | Value | Meaning |
 |---------|-------|---------|
@@ -71,7 +71,7 @@ WordPress URLs" from real detection data and avoids wasted requests. The
 technology → tag/template mapping lives in `Python/nuclei_scan.py`
 (`TECH_TO_TAGS`, `TECH_TO_TEMPLATES`) and is easy to extend.
 
-Both modes apply `nuclei.yaml` and the Interactsh server from `interactsh.config`,
+Both modes apply `nuclei-config.yaml` and the Interactsh server from `interactsh.config`,
 write JSON (`-j -o`), and accept `--import` to ingest results immediately.
 
 ## Importing findings

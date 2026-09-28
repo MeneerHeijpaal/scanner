@@ -1,4 +1,4 @@
-# nuclei.yaml - nuclei configuration applied per VPS (nuclei -config nuclei.yaml)
+# nuclei-config.yaml - nuclei configuration applied per VPS (nuclei -config config/nuclei-config.yaml)
 #
 # These are the standard scan settings the project applies to every VPS running
 # nuclei. Keys mirror nuclei's command-line long flags.

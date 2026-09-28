@@ -35,7 +35,7 @@ class ScannerUtils:
         """Initialize ScannerUtils.
 
         Args:
-            config: Configuration dictionary from config.yml
+            config: Configuration dictionary from config/server-config.yaml
             store: ElasticsearchManager instance (the primary data store)
             sqlite_db_path: Path to SQLite labels database
         """
