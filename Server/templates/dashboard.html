@@ -93,6 +93,8 @@
   tbody tr{cursor:pointer}tbody tr:hover{background:var(--surface-2)}
   td .u{color:var(--ink);font-family:var(--font-mono);font-size:12px}
   td .s{color:var(--muted);font-size:11.5px}
+  .ip-link{color:var(--accent);cursor:pointer;text-decoration:none;border-bottom:1px dashed color-mix(in srgb,var(--accent) 45%,transparent)}
+  .ip-link:hover{border-bottom-style:solid}
   .url-cell{display:inline-flex;align-items:center;gap:7px}
   .ext{display:inline-grid;place-items:center;width:20px;height:20px;border-radius:5px;color:var(--muted);
     border:1px solid var(--hair);text-decoration:none;flex:none}
@@ -242,6 +244,16 @@ const esc=s=>String(s==null?"":s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",
 const extIcon=`<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 3h6v6"/><path d="M10 14 21 3"/><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/></svg>`;
 function extLink(url){ if(!url) return ""; return `<a class="ext" href="${esc(url)}" target="_blank" rel="noopener noreferrer" title="Open ${esc(url)}">${extIcon}</a>`; }
 function sevChip(s){s=s||"unknown";return `<span class="sev ${s}"><span class="sq"></span>${SEV_LABEL[s]||s}</span>`;}
+/* Clickable IP: same as typing /ip:<IP> in the search box. stopPropagation so
+   it doesn't also open the row's asset drawer. */
+function ipCell(ip){return ip?`<a class="ip-link s mono" title="Filter by /ip:${esc(ip)}" onclick="event.stopPropagation();searchIp('${esc(ip)}')">${esc(ip)}</a>`:`<span class="s">—</span>`;}
+window.searchIp=function(ip){
+  qEl.value="/ip:"+ip;
+  committed=true;
+  document.getElementById("filterFlag").classList.add("on");
+  selectTab("assets");   // refresh the Assets view with every URL on that IP
+  loadSummary();         // and the KPIs/charts for the new filter
+};
 function tagChips(t){return `<span class="tags">${(t||[]).map(x=>`<span class="chip mono">${esc(x)}</span>`).join("")}</span>`;}
 function emptyRow(c,msg){return `<tr style="cursor:default"><td colspan="${c}"><div class="empty">${msg||"No rows match the current filter."}</div></td></tr>`;}
 
@@ -318,7 +330,7 @@ async function loadAssets(){const d=await api("/api/dashboard/assets");const row
   document.querySelector("#assetsTable tbody").innerHTML=rows.length?rows.map(a=>`
     <tr onclick="openAsset('${esc(a.host)}')">
       <td><span class="url-cell"><span class="u">${esc(a.host)}</span>${extLink(a.url)}</span></td>
-      <td><span class="s mono">${esc(a.ip)}</span></td>
+      <td>${ipCell(a.ip)}</td>
       <td class="tnum">${a.endpoints}</td><td class="tnum">${a.ports}</td><td class="tnum">${a.findings}</td>
       <td>${sevChip(a.top_severity)}</td></tr>`).join(""):emptyRow(6);}
 
@@ -326,7 +338,7 @@ async function loadAssets(){const d=await api("/api/dashboard/assets");const row
 async function loadPorts(){const d=await api("/api/dashboard/ports");const rows=d.rows||[];setCnt("ports",rows.length);
   document.querySelector("#portsTable tbody").innerHTML=rows.length?rows.map(p=>`
     <tr onclick="openAsset('${esc(p.host)}')">
-      <td><span class="u">${esc(p.host)}</span></td><td><span class="s mono">${esc(p.ip)}</span></td>
+      <td><span class="u">${esc(p.host)}</span></td><td>${ipCell(p.ip)}</td>
       <td><span class="stat-code">${esc(p.port)}</span></td><td><span class="chip">${esc(p.service)}</span></td>
       <td><span class="s mono">${esc(p.version)}</span></td></tr>`).join(""):emptyRow(5);}
 
