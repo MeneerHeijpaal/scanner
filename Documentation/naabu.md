@@ -44,16 +44,22 @@ naabu. It then runs naabu with the project's standard switches:
 
 ```
 naabu -list <hosts> -port <ports.conf> \
-      -sD \                 # service discovery
-      -sV \                 # service version detection
-      -retries 4 \          # retry unanswered probes 4 times
-      -timeout 1200 \       # per-probe timeout (milliseconds)
-      -scan-all-ips \       # scan every resolved IP of a host
-      -j -o <output>        # JSON output
+      -nmap-cli 'nmap -sC -sV' \  # run nmap default scripts + service/version detection
+      -retries 4 \                # retry unanswered probes 4 times
+      -timeout 1200 \             # per-probe timeout (milliseconds)
+      -scan-all-ips \             # scan every resolved IP of a host
+      -j -o <output>              # JSON output
 ```
+
+The derived hosts file is written next to the output as `<output>-hosts.txt` and
+kept for inspection.
 
 > naabu's SYN scanning needs `libpcap` and root/`CAP_NET_RAW`. The Terraform
 > workers install `libpcap-dev` and run as root; locally you may need `sudo`.
+>
+> `-nmap-cli` runs **nmap** on the discovered ports, so **nmap must be installed**
+> and on `PATH`. Its service/version + script output goes to naabu's stdout; the
+> JSON file (`-o`) holds naabu's port results.
 
 ## Importing results
 

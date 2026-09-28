@@ -4,8 +4,8 @@ Wrapper to run ProjectDiscovery's `naabu` port scanner over the hosts derived
 from a URL/host list, using the ports defined in ports.conf.
 
 The scan is run according to the project's rules:
-  -sD                 service discovery
-  -sV                 service version detection
+  -nmap-cli 'nmap -sC -sV'  run nmap default scripts + service/version detection
+                            on the discovered ports (requires nmap on PATH)
   -retries 4          retry unanswered probes 4 times
   -timeout 1200       per-probe timeout (milliseconds)
   -scan-all-ips       scan every resolved IP for a host
@@ -24,9 +24,9 @@ Usage:
 
 import argparse
 import logging
+import shutil
 import subprocess
 import sys
-import tempfile
 from pathlib import Path
 from urllib.parse import urlparse
 
@@ -74,8 +74,13 @@ def normalize_host(entry: str) -> str:
     return entry
 
 
-def build_host_file(input_file: Path) -> Path:
-    """Write a de-duplicated host file from a URL/host list. Returns its path."""
+def build_host_file(input_file: Path, dest: Path) -> Path:
+    """Write a de-duplicated host file (derived from a URL/host list) to ``dest``.
+
+    The file is written next to the scan output (not a temp file that is deleted
+    afterwards) so the exact ``-list`` input naabu received stays on disk for
+    inspection.
+    """
     seen = set()
     hosts = []
     for line in input_file.read_text().splitlines():
@@ -85,16 +90,14 @@ def build_host_file(input_file: Path) -> Path:
             hosts.append(host)
     if not hosts:
         raise ValueError(f"No hosts found in {input_file}")
-    tmp = tempfile.NamedTemporaryFile('w', suffix='.txt', delete=False, prefix='naabu-hosts-')
-    tmp.write('\n'.join(hosts))
-    tmp.close()
-    logger.info(f"Prepared {len(hosts)} unique hosts for scanning")
-    return Path(tmp.name)
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    dest.write_text('\n'.join(hosts) + '\n')
+    logger.info(f"Prepared {len(hosts)} unique hosts -> {dest}")
+    return dest
 
 
 def find_naabu(repo_root: Path) -> Path:
     """Locate the naabu binary (repo root, bin/, or PATH)."""
-    import shutil
     for candidate in (repo_root / 'naabu', repo_root / 'bin' / 'naabu'):
         if candidate.exists():
             return candidate
@@ -151,35 +154,33 @@ def main():
     logger.info(f"Scanning ports: {ports}")
 
     naabu = find_naabu(repo_root)
+    if shutil.which('nmap') is None:
+        logger.warning("nmap not found on PATH; naabu's -nmap-cli service/version "
+                       "detection needs nmap installed to produce results.")
     output_file = Path(args.output)
+    hosts_file = output_file.parent / f"{output_file.stem}-hosts.txt"
 
-    tmp_host_file = None
     try:
         if args.list:
             input_file = Path(args.list).expanduser().resolve()
             if not input_file.is_file():
                 logger.error(f"Input file not found: {input_file}")
                 sys.exit(2)
-            tmp_host_file = build_host_file(input_file)
-            run_naabu(naabu, tmp_host_file, ports, output_file)
+            build_host_file(input_file, hosts_file)
         else:
             host = normalize_host(args.host)
-            tmp = tempfile.NamedTemporaryFile('w', suffix='.txt', delete=False, prefix='naabu-hosts-')
-            tmp.write(host)
-            tmp.close()
-            tmp_host_file = Path(tmp.name)
-            run_naabu(naabu, tmp_host_file, ports, output_file)
+            if not host:
+                logger.error(f"No valid host derived from: {args.host}")
+                sys.exit(2)
+            hosts_file.parent.mkdir(parents=True, exist_ok=True)
+            hosts_file.write_text(host + '\n')
+            logger.info(f"Prepared 1 host -> {hosts_file}")
+        run_naabu(naabu, hosts_file, ports, output_file)
     except subprocess.CalledProcessError as e:
         sys.exit(e.returncode)
     except KeyboardInterrupt:
         logger.info("Scan interrupted by user")
         sys.exit(130)
-    finally:
-        if tmp_host_file and tmp_host_file.exists():
-            try:
-                tmp_host_file.unlink()
-            except OSError:
-                pass
 
     if args.do_import:
         if output_file.exists() and output_file.stat().st_size > 0:
