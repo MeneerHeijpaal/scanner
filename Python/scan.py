@@ -93,32 +93,38 @@ def main():
     findings_out = outdir / "findings.json"
 
     do_import = not args.no_import
-    results = []
+    results = []  # list of (name, status) where status is "ok" | "fail" | "skip"
+
+    def run_stage(name, scan_cmd, importer, out_file):
+        """Run a scan step, then import its output if it produced any."""
+        if not run_step(f"{name} scan", scan_cmd):
+            results.append((f"{name} scan", "fail"))
+            return
+        results.append((f"{name} scan", "ok"))
+        if not do_import:
+            return
+        # A stage that finds nothing may not write an output file at all — that
+        # is not an error, so skip the import cleanly instead of failing on a
+        # missing file.
+        if not out_file.exists() or out_file.stat().st_size == 0:
+            logger.info(f"↷ {name}: no results to import ({out_file.name} missing or empty); skipping")
+            results.append((f"{name} import", "skip"))
+            return
+        ok = run_step(f"{name} import",
+                      [sys.executable, str(importer), "-f", str(out_file)])
+        results.append((f"{name} import", "ok" if ok else "fail"))
 
     try:
-        # 1) httpx
         if not args.skip_httpx:
-            if run_step("httpx scan", [sys.executable, str(PY / "scanner.py"),
-                                       "-f", str(targets), "-o", str(httpx_out)]):
-                results.append(("httpx scan", True))
-                if do_import:
-                    results.append(("httpx import", run_step("httpx import",
-                        [sys.executable, str(PY / "import_httpx.py"), "-f", str(httpx_out)])))
-            else:
-                results.append(("httpx scan", False))
+            run_stage("httpx",
+                      [sys.executable, str(PY / "scanner.py"), "-f", str(targets), "-o", str(httpx_out)],
+                      PY / "import_httpx.py", httpx_out)
 
-        # 2) naabu
         if not args.skip_naabu:
-            if run_step("naabu scan", [sys.executable, str(PY / "naabu_scan.py"),
-                                       "-l", str(targets), "-o", str(ports_out)]):
-                results.append(("naabu scan", True))
-                if do_import:
-                    results.append(("naabu import", run_step("naabu import",
-                        [sys.executable, str(PY / "import_naabu.py"), "-f", str(ports_out)])))
-            else:
-                results.append(("naabu scan", False))
+            run_stage("naabu",
+                      [sys.executable, str(PY / "naabu_scan.py"), "-l", str(targets), "-o", str(ports_out)],
+                      PY / "import_naabu.py", ports_out)
 
-        # 3) nuclei
         if not args.skip_nuclei:
             if args.nuclei_mode == "tech-aware":
                 nuclei_cmd = [sys.executable, str(PY / "nuclei_scan.py"),
@@ -126,13 +132,8 @@ def main():
             else:
                 nuclei_cmd = [sys.executable, str(PY / "nuclei_scan.py"),
                               "-l", str(targets), "-o", str(findings_out)]
-            if run_step(f"nuclei scan ({args.nuclei_mode})", nuclei_cmd):
-                results.append(("nuclei scan", True))
-                if do_import:
-                    results.append(("nuclei import", run_step("nuclei import",
-                        [sys.executable, str(PY / "import_nuclei.py"), "-f", str(findings_out)])))
-            else:
-                results.append(("nuclei scan", False))
+            logger.info(f"nuclei mode: {args.nuclei_mode}")
+            run_stage("nuclei", nuclei_cmd, PY / "import_nuclei.py", findings_out)
     finally:
         if tmp_targets and tmp_targets.exists():
             try:
@@ -141,11 +142,12 @@ def main():
                 pass
 
     # Summary
+    symbol = {"ok": "✓", "fail": "✗", "skip": "↷"}
     logger.info("=" * 64)
     logger.info(f"Pipeline finished. Output in: {outdir}")
-    for name, ok in results:
-        logger.info(f"  {'✓' if ok else '✗'} {name}")
-    failed = [n for n, ok in results if not ok]
+    for name, status in results:
+        logger.info(f"  {symbol.get(status, '?')} {name}")
+    failed = [n for n, s in results if s == "fail"]
     if failed:
         logger.warning(f"{len(failed)} step(s) failed: {', '.join(failed)}")
         sys.exit(1)
