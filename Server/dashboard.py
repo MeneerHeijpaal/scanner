@@ -127,15 +127,9 @@ def build_record_query(parsed, utils=None):
     return {"bool": {"filter": filters}} if filters else {"match_all": {}}
 
 
-def build_host_query(parsed):
-    """ES query for host-keyed indices (ports/findings/interactions).
-
-    Only host-ish tokens (url / general) narrow these; body/title do not apply.
-    """
-    term = parsed["url"] or parsed["general"]
-    if not term:
-        return {"match_all": {}}
-    return _wildcard_over(["host"], term)
+# NOTE: the query for the host-keyed indices (ports/findings) is built by the
+# request-scoped ``_host_query`` closure in ``register_dashboard_routes`` — it
+# needs the store/utils to resolve ``/ip:`` and ``/label:`` to a host set.
 
 
 # --------------------------------------------------------------------------- #
@@ -182,6 +176,55 @@ def register_dashboard_routes(app, store, config, utils):
     def _q():
         return utils.sanitize_string_input(request.args.get("q", ""), max_length=500)
 
+    def _record_host_set(parsed):
+        """Hosts matching the record-level filters (``/ip:`` / ``/label:``).
+
+        These filters live on the httpx records index (they need ``ip_addr`` /
+        the hash fields, which the host-keyed indices don't carry), so to filter
+        ports/findings by them we first resolve the set of hosts they match and
+        then constrain by host.
+
+        Returns ``None`` when neither filter is active (no host constraint), or a
+        list of matching hosts otherwise — an empty list means "match nothing".
+        """
+        rfilters = []
+        if parsed.get("ip"):
+            clause, _err = utils._build_ip_clause(parsed["ip"])
+            if not clause:
+                return []  # invalid IP pattern -> match nothing
+            rfilters.append(clause)
+        if parsed.get("label"):
+            hashes = utils.get_hashes_by_label(parsed["label"])
+            if not hashes:
+                return []  # unknown / unused label -> match nothing
+            rfilters.append({"bool": {"should": [
+                {"terms": {"hash.body_sha256": hashes}},
+                {"terms": {"hash.header_sha256": hashes}},
+            ], "minimum_should_match": 1}})
+        if not rfilters:
+            return None
+        agg = store.raw_search(IDX_RECORDS, query={"bool": {"filter": rfilters}}, size=0,
+                               aggs={"hosts": {"terms": {"field": "host", "size": 10000}}})
+        return [b["key"] for b in _dig(agg.get("aggregations", {}), "hosts.buckets") or []]
+
+    def _host_query(parsed):
+        """Query for the host-keyed indices (ports/findings), honoring every token.
+
+        ``url`` / ``general`` narrow by host directly; ``/ip:`` and ``/label:`` are
+        resolved to a host set via :func:`_record_host_set` so they filter these
+        indices too (fixes ports/findings ignoring an ``/ip:`` search).
+        """
+        filters = []
+        term = parsed["url"] or parsed["general"]
+        if term:
+            filters.append(_wildcard_over(["host"], term))
+        hosts = _record_host_set(parsed)
+        if hosts is not None:
+            if not hosts:
+                return MATCH_NONE
+            filters.append({"terms": {"host": hosts}})
+        return {"bool": {"filter": filters}} if filters else {"match_all": {}}
+
     @app.route("/")
     @app.route("/dashboard")
     def dashboard_page():
@@ -193,6 +236,7 @@ def register_dashboard_routes(app, store, config, utils):
         """KPIs, severity distribution, top technologies, and body-match count."""
         parsed = parse_query(_q())
         rq = build_record_query(parsed, utils)
+        hq = _host_query(parsed)
 
         rec = store.raw_search(IDX_RECORDS, query=rq, size=0, aggs={
             "assets": {"cardinality": {"field": "host"}},
@@ -203,7 +247,7 @@ def register_dashboard_routes(app, store, config, utils):
         tech = [{"name": b["key"], "count": b["doc_count"]}
                 for b in _dig(rec.get("aggregations", {}), "tech.buckets") or []]
 
-        fnd = store.raw_search(IDX_FINDINGS, query=build_host_query(parsed), size=0, aggs={
+        fnd = store.raw_search(IDX_FINDINGS, query=hq, size=0, aggs={
             "sev": {"terms": {"field": "info.severity", "size": 10}},
         })
         sev_buckets = {b["key"]: b["doc_count"]
@@ -211,7 +255,7 @@ def register_dashboard_routes(app, store, config, utils):
         severities = [{"severity": s, "count": sev_buckets.get(s, 0)}
                       for s in SEVERITY_ORDER if s != "unknown"]
 
-        ports_total = store.raw_count(IDX_PORTS, build_host_query(parsed))
+        ports_total = store.raw_count(IDX_PORTS, hq)
         interactions_total = store.raw_count(IDX_INTERACTIONS, {"match_all": {}})
 
         # Body-match counter: how many records contain the /body: string,
@@ -240,7 +284,7 @@ def register_dashboard_routes(app, store, config, utils):
     def dashboard_findings():
         """Findings table, severity-ranked."""
         parsed = parse_query(_q())
-        resp = store.raw_search(IDX_FINDINGS, query=build_host_query(parsed), size=500,
+        resp = store.raw_search(IDX_FINDINGS, query=_host_query(parsed), size=500,
                                 source=["template-id", "info", "matched-at", "host",
                                         "interactsh_protocol", "interaction"])
         rows = []
@@ -270,14 +314,15 @@ def register_dashboard_routes(app, store, config, utils):
         """Assets table: records joined with per-host port and finding counts."""
         parsed = parse_query(_q())
         rq = build_record_query(parsed, utils)
+        hq = _host_query(parsed)
 
         rec = store.raw_search(IDX_RECORDS, query=rq, size=0, aggs={
             "hosts": {"terms": {"field": "host", "size": 200, "order": {"_count": "desc"}},
                       "aggs": {"sample": {"top_hits": {"size": 1, "_source": ["ip", "url"]}}}},
         })
-        port_agg = store.raw_search(IDX_PORTS, query=build_host_query(parsed), size=0, aggs={
+        port_agg = store.raw_search(IDX_PORTS, query=hq, size=0, aggs={
             "hosts": {"terms": {"field": "host", "size": 2000}}})
-        find_agg = store.raw_search(IDX_FINDINGS, query=build_host_query(parsed), size=0, aggs={
+        find_agg = store.raw_search(IDX_FINDINGS, query=hq, size=0, aggs={
             "hosts": {"terms": {"field": "host", "size": 2000},
                       "aggs": {"sev": {"terms": {"field": "info.severity", "size": 10}}}}})
 
@@ -309,7 +354,7 @@ def register_dashboard_routes(app, store, config, utils):
     def dashboard_ports():
         """Open ports / services table."""
         parsed = parse_query(_q())
-        resp = store.raw_search(IDX_PORTS, query=build_host_query(parsed), size=500,
+        resp = store.raw_search(IDX_PORTS, query=_host_query(parsed), size=500,
                                 sort=[{"host": {"order": "asc"}}, {"port": {"order": "asc"}}],
                                 source=["host", "ip", "port", "service", "version"])
         rows = [{
