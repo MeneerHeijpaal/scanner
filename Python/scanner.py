@@ -95,7 +95,7 @@ def main():
 		except Exception as e:
 			logger.warning(f'Could not set executable bit on httpx: {e}')
 
-	config_path = repo_root / 'httpx-config.yaml'
+	config_path = repo_root / 'config' / 'httpx-config.yaml'
 	if not config_path.exists():
 		logger.error(f'config.yaml not found at {config_path}')
 		sys.exit(2)

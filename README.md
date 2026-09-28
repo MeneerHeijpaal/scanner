@@ -43,15 +43,16 @@ Scanner/
 │   ├── elasticsearch_manager.py # Elasticsearch data store
 │   ├── templates/ static/       # HTML templates and assets
 │   └── labels/                  # SQLite labels database
+├── config/                      # Tool configuration files
+│   ├── httpx-config.yaml        # httpx scanner configuration
+│   ├── ports.conf               # naabu ports to scan
+│   ├── nuclei.yaml              # nuclei per-VPS settings
+│   └── interactsh.config        # self-hosted Interactsh server
 ├── nuclei-workflows/            # nuclei tech-conditional workflow + detections
 ├── terraform/                   # Hetzner multi-VPS provisioning
 ├── Documentation/               # Component + architecture docs
 ├── bin/                         # Location for the binaries (httpx/naabu/nuclei)
 ├── Elastic_Data/                # Elasticsearch data directory
-├── httpx-config.yaml            # httpx scanner configuration
-├── ports.conf                   # naabu ports to scan
-├── nuclei.yaml                  # nuclei per-VPS settings
-├── interactsh.config            # self-hosted Interactsh server
 ├── docker-compose.yml           # Elasticsearch Docker configuration
 └── requirements.txt             # Python dependencies
 ```
@@ -179,7 +180,7 @@ the same URL updates the existing record instead of creating a duplicate.
 python3 Python/naabu_scan.py -l urls.txt -o ports.json --import
 ```
 
-Edit `ports.conf` to change which ports are scanned (default:
+Edit `config/ports.conf` to change which ports are scanned (default:
 `21,22,23,25,110,143,445,993,995,2222`). See
 [`Documentation/naabu.md`](Documentation/naabu.md).
 
@@ -194,8 +195,8 @@ python3 Python/nuclei_scan.py --from-elasticsearch -o findings.json --import
 python3 Python/nuclei_scan.py -l urls.txt -o findings.json --import
 ```
 
-`nuclei.yaml` holds the per-VPS settings and `interactsh.config` the out-of-band
-server. See [`Documentation/nuclei.md`](Documentation/nuclei.md) and
+`config/nuclei.yaml` holds the per-VPS settings and `config/interactsh.config` the
+out-of-band server. See [`Documentation/nuclei.md`](Documentation/nuclei.md) and
 [`Documentation/interactsh.md`](Documentation/interactsh.md).
 
 ### Migrate legacy MongoDB data (one-off)
@@ -238,17 +239,16 @@ validation:
 
 Environment overrides: `SECRET_KEY`, `ES_HOST`, `ES_PORT`, `ES_INDEX`, `FLASK_DEBUG`.
 
-### httpx configuration (`httpx-config.yaml`)
+### Tool configuration (`config/`)
 
-Standard httpx config (tech detection, threads, rate limit, follow-redirects,
-etc.). `Python/scanner.py` always runs httpx with this file. See the
-[httpx docs](https://github.com/projectdiscovery/httpx).
+All tool configuration lives in the `config/` folder:
 
-### ports / nuclei / interactsh
+- `config/httpx-config.yaml` — httpx settings (tech detection, threads, rate limit, follow-redirects, etc.); `Python/scanner.py` always runs httpx with this file. See the [httpx docs](https://github.com/projectdiscovery/httpx).
+- `config/ports.conf` — ports naabu scans.
+- `config/nuclei.yaml` — per-VPS nuclei settings (concurrency 30, bulk-size 30, rate-limit 200, `scan-strategy: host-spray`, `response-size-read` 8 MB).
+- `config/interactsh.config` — `server_url` and `server_ip` for the out-of-band server.
 
-- `ports.conf` — ports naabu scans.
-- `nuclei.yaml` — per-VPS nuclei settings (concurrency 30, bulk-size 30, rate-limit 200, `scan-strategy: host-spray`, `response-size-read` 8 MB).
-- `interactsh.config` — `server_url` and `server_ip` for the out-of-band server.
+(`Server/config.yml` above is the Flask/Elasticsearch app configuration, separate from these tool files.)
 
 ## Command Reference
 

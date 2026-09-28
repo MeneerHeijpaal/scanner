@@ -9,8 +9,8 @@ only against URLs that actually expose that technology.
 
 | File | Purpose |
 |------|---------|
-| `nuclei.yaml` | Per-VPS nuclei settings applied to every run. |
-| `interactsh.config` | Self-hosted Interactsh server (see [interactsh.md](interactsh.md)). |
+| `config/nuclei.yaml` | Per-VPS nuclei settings applied to every run. |
+| `config/interactsh.config` | Self-hosted Interactsh server (see [interactsh.md](interactsh.md)). |
 | `nuclei-workflows/tech-conditional-workflow.yaml` | Native nuclei workflow (detect → run matching templates). |
 | `nuclei-workflows/detections/*.yaml` | Lightweight detection templates gating the workflow. |
 | `Python/nuclei_scan.py` | Runner (workflow mode and tech-aware mode). |
@@ -19,7 +19,7 @@ only against URLs that actually expose that technology.
 
 ## nuclei.yaml (per-VPS settings)
 
-Applied via `nuclei -config nuclei.yaml`:
+Applied via `nuclei -config config/nuclei.yaml`:
 
 | Setting | Value | Meaning |
 |---------|-------|---------|

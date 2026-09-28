@@ -97,7 +97,7 @@ def read_interactsh(config_path: Path):
 def base_nuclei_cmd(nuclei: Path, repo_root: Path, interactsh: dict, output_file: Path):
     """Build the common nuclei argument list (config + interactsh + JSON out)."""
     cmd = [str(nuclei), '-disable-update-check', '-j', '-o', str(output_file)]
-    nuclei_cfg = repo_root / 'nuclei.yaml'
+    nuclei_cfg = repo_root / 'config' / 'nuclei.yaml'
     if nuclei_cfg.exists():
         cmd += ['-config', str(nuclei_cfg)]
     server_url = interactsh.get('server_url')
@@ -224,7 +224,7 @@ def main():
 
     repo_root = Path(__file__).resolve().parents[1]
     nuclei = find_nuclei(repo_root)
-    interactsh = read_interactsh(repo_root / 'interactsh.config')
+    interactsh = read_interactsh(repo_root / 'config' / 'interactsh.config')
     output_file = Path(args.output)
 
     if args.from_elasticsearch:

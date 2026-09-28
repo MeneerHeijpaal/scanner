@@ -42,7 +42,7 @@ bin/httpx
 
 # Scan results and data
 *.json
-!httpx-config.yaml
+!config/httpx-config.yaml
 input/
 JSON/
 results/

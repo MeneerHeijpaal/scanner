@@ -9,7 +9,7 @@ HTTP, naabu tells you which other ports are open on the same hosts.
 
 | File | Purpose |
 |------|---------|
-| `ports.conf` | The ports naabu scans (editable). |
+| `config/ports.conf` | The ports naabu scans (editable). |
 | `Python/naabu_scan.py` | Wrapper that derives hosts from a URL list and runs naabu. |
 | `Python/import_naabu.py` | Imports naabu JSON output into Elasticsearch. |
 | `bin/naabu` | The naabu binary (downloaded by the user; gitignored). |
