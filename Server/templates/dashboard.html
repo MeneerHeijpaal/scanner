@@ -143,6 +143,16 @@
   .d-row{border:1px solid var(--hair);border-radius:9px;padding:10px 12px;margin-bottom:8px}
   .d-row .r1{display:flex;align-items:center;gap:8px;justify-content:space-between}
   .d-row .r2{margin-top:5px;font-size:11.5px;color:var(--muted)}
+  .d-row.clickable{cursor:pointer}.d-row.clickable:hover{border-color:var(--hair-strong);background:var(--surface-2)}
+  .d-back{display:inline-flex;align-items:center;gap:6px;font-size:12px;color:var(--accent);background:none;border:0;cursor:pointer;padding:0;margin-bottom:6px}
+  .kv{display:grid;grid-template-columns:auto 1fr;gap:6px 14px;font-size:12.5px;margin:0}
+  .kv dt{color:var(--muted);white-space:nowrap}
+  .kv dd{margin:0;font-family:var(--font-mono);word-break:break-all}
+  .rec-pre{font-family:var(--font-mono);font-size:11.5px;line-height:1.55;white-space:pre-wrap;word-break:break-word;
+    background:var(--surface-2);border:1px solid var(--hair);border-radius:8px;padding:11px 12px;max-height:340px;overflow:auto;margin:0}
+  .rec-hdr{font-size:11.5px;line-height:1.7}.rec-hdr b{color:var(--ink)}
+  .raw-links{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:7px}
+  .raw-links a{font-size:12.5px}
   @media (max-width:920px){.kpis{grid-template-columns:repeat(3,1fr)}.g-2{grid-template-columns:1fr}}
   @media (max-width:520px){.kpis{grid-template-columns:repeat(2,1fr)}.brand small{display:none}}
   @media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
@@ -155,11 +165,14 @@
       <div class="brand"><span class="dot"></span>Recon Console <small>scanner</small></div>
       <div class="search">
         <svg class="mag" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="m20 20-3-3"/></svg>
-        <input id="q" placeholder="Search  ·  /body:admin  /title:login  /url:*.acme.com  (use * as wildcard)" autocomplete="off" spellcheck="false">
+        <input id="q" placeholder="Search  ·  /url:  /ip:  /body:  /title:  /label:  ·  * = wildcard, e.g. /ip:10.0.0.0/24" autocomplete="off" spellcheck="false">
       </div>
       <span class="filter-flag" id="filterFlag" title="Results are filtered">
         <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 5h18l-7 8v6l-4 2v-8z"/></svg>Filtered
       </span>
+      <a class="icon-btn" href="/search" title="Classic search UI" aria-label="Classic search" style="text-decoration:none">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="m20 20-3-3"/></svg>
+      </a>
       <button class="icon-btn" id="theme" title="Toggle theme" aria-label="Toggle theme">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg>
       </button>
@@ -350,7 +363,7 @@ window.openAsset=async host=>{
   const web=(d.endpoints||[]),ports=(d.ports||[]),finds=(d.findings||[]);
   document.getElementById("dBody").innerHTML=`
     <div class="d-sec"><div class="d-sec-h">Web endpoints <span class="cnt">httpx · ${web.length}</span></div>
-      ${web.length?web.map(w=>`<div class="d-row"><div class="r1">
+      ${web.length?web.map(w=>`<div class="d-row clickable" onclick="openRecord('${esc(w.id)}','${esc(host)}')" title="Open full details"><div class="r1">
         <span class="url-cell"><span class="u" style="word-break:break-all">${esc(w.url)}</span>${extLink(w.url)}</span>
         <span class="stat-code" style="color:${w.status<300?'var(--low)':w.status<400?'var(--med)':'var(--crit)'}">${esc(w.status)}</span></div>
         <div class="r2">${w.title?esc(w.title)+" · ":""}${(w.tech||[]).map(t=>`<span class="chip">${esc(t)}</span>`).join(" ")}</div></div>`).join(""):`<div class="empty">No web endpoints.</div>`}</div>
@@ -362,6 +375,42 @@ window.openAsset=async host=>{
         <div class="r2" style="word-break:break-all">${esc(f.matched_at)}</div>
         <div class="r2" style="margin-top:6px">${tagChips(f.tags)}</div></div>`).join(""):`<div class="empty">No findings.</div>`}</div>`;
   drawer.classList.add("open");scrim.classList.add("open");drawer.setAttribute("aria-hidden","false");
+};
+window.openRecord=async (id,host)=>{
+  const r=await fetch(new URL(`/api/dashboard/record?id=${encodeURIComponent(id)}`,location.origin)).then(x=>x.json()).catch(()=>({}));
+  const body=document.getElementById("dBody");
+  if(!r||r.error){body.innerHTML=`<button class="d-back" onclick="openAsset('${esc(host)}')">← ${esc(host)}</button><div class="empty">Could not load record.</div>`;return;}
+  document.getElementById("dTitle").textContent=r.url||host;
+  const code=v=>`<code>${esc(v)}</code>`;
+  const row=(l,v)=>(v===0||v)?`<dt>${l}</dt><dd>${v}</dd>`:"";
+  const kv=rows=>{const s=rows.filter(Boolean).join("");return s?`<dl class="kv">${s}</dl>`:"";};
+  const chips=a=>(a&&a.length)?`<span class="tags">${a.map(x=>`<span class="chip">${esc(x)}</span>`).join("")}</span>`:"";
+  const sec=(title,inner)=>inner?`<div class="d-sec"><div class="d-sec-h">${title}</div>${inner}</div>`:"";
+
+  const urlVal=`<a href="${esc(r.url)}" target="_blank" rel="noopener noreferrer">${code(r.url)}</a>`;
+  const hostVal=r.host?code(r.host)+(r.ip_count>1?` <span class="s">(${r.ip_count} domains)</span>`:""):"";
+  const bodyHashVal=r.body_sha256?(r.body_label?`<span class="chip">${esc(r.body_label)}</span> `:"")+code(r.body_sha256)+(r.body_count>1?` <span class="s">(${r.body_count} matches)</span>`:""):"";
+  const headerHashVal=r.header_sha256?(r.header_label?`<span class="chip">${esc(r.header_label)}</span> `:"")+code(r.header_sha256)+(r.header_count>1?` <span class="s">(${r.header_count} matches)</span>`:""):"";
+  const kb=Object.entries(r.knowledgebase||{}).map(([k,v])=>`<b>${esc(k)}:</b> ${esc(v)}`).join("<br>");
+  const headers=Object.entries(r.header||{}).map(([k,v])=>`<div><b>${esc(k)}:</b> ${esc(v)}</div>`).join("");
+
+  const rawLinks=[`<li><a href="/details/${encodeURIComponent(r.id)}/download/json" target="_blank">Download Raw JSON</a></li>`];
+  if(r.has_raw_header)rawLinks.push(`<li><a href="/details/${encodeURIComponent(r.id)}/download/raw_header" target="_blank">Download Raw Response Header</a></li>`);
+  if(r.has_request)rawLinks.push(`<li><a href="/details/${encodeURIComponent(r.id)}/download/request" target="_blank">Download Raw HTTP Request</a></li>`);
+
+  body.innerHTML=`<button class="d-back" onclick="openAsset('${esc(host)}')">← ${esc(host)}</button>`+
+    sec("Basic information",kv([row("URL",urlVal),r.redirect_location?row("Redirect",`<a href="${esc(r.redirect_location)}" target="_blank" rel="noopener noreferrer">${code(r.redirect_location)}</a>`):"",
+        row("Host (IP)",hostVal),row("Timestamp",esc(r.timestamp)),row("Status code",r.status_code?code(r.status_code):"")]))+
+    sec("Request / response metadata",kv([row("Method",r.method?code(r.method):""),row("Scheme",r.scheme?code(r.scheme):""),
+        row("Port",r.port?code(r.port):""),row("Path",r.path?code(r.path):""),row("Content type",r.content_type?code(r.content_type):""),
+        row("Content length",r.content_length?code(r.content_length):""),row("Response time",r.time?code(r.time):"")]))+
+    sec("Content hashes",kv([row("Body SHA256",bodyHashVal),row("Header SHA256",headerHashVal)]))+
+    sec("Network information",kv([row("Input",r.input?code(r.input):""),row("A records (IPs)",chips(r.a)),row("CNAME",chips(r.cname))]))+
+    sec("Technology &amp; analysis",kv([row("Detected technologies",chips(r.tech)),row("Word count",r.words!==""?code(r.words):""),
+        row("Line count",r.lines!==""?code(r.lines):""),row("Knowledge base",kb)]))+
+    sec("Raw data",`<ul class="raw-links">${rawLinks.join("")}</ul>`)+
+    sec("Response headers",headers?`<div class="rec-hdr">${headers}</div>`:"")+
+    sec("Response body",r.body_decoded?`<pre class="rec-pre">${esc(r.body_decoded)}</pre>`:"");
 };
 function closeDrawer(){drawer.classList.remove("open");scrim.classList.remove("open");drawer.setAttribute("aria-hidden","true");}
 document.getElementById("dClose").onclick=closeDrawer;scrim.onclick=closeDrawer;

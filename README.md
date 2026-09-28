@@ -9,7 +9,7 @@ filtering over the results.
 
 ## Features
 
-- **Unified Dashboard**: One console (`/dashboard`) joining httpx, naabu, nuclei and Interactsh on the asset, with a live OOB interaction stream and `/body: /title: /url:` + `*` wildcard search
+- **Unified Dashboard**: One console (the landing page, `/`) joining httpx, naabu, nuclei and Interactsh on the asset, with a live OOB interaction stream, full per-URL detail, and `/url: /ip: /body: /title: /label:` + `*` wildcard search
 - **Fast Body Search**: Search response body content in <1 second (Elasticsearch phrase search)
 - **Single Store**: Elasticsearch is the one runtime data store — all filters, counts, sorting and pagination run as a single query (no MongoDB at runtime)
 - **Advanced Filtering**: IP/URL patterns, native CIDR notation, wildcard matching (e.g., `192.168.x.1`)
@@ -172,8 +172,12 @@ source .venv/bin/activate
 
 python3 Python/scan.py -l urls.txt        # one URL/host per line
 # then browse results:
-python3 Server/server.py                  # http://127.0.0.1:8001/dashboard
+python3 Server/server.py                  # http://127.0.0.1:8001  (Recon Console)
 ```
+
+The **Recon Console dashboard is the landing page** (`/`). The classic search UI
+is at `/search`. In the dashboard, click a host in **Assets** to open its drawer,
+then click any URL under **Web endpoints** for the full per-URL detail.
 
 Useful flags: `--skip-naabu` / `--skip-nuclei` / `--skip-httpx` to run a subset,
 `--nuclei-mode workflow` to run the workflow instead of the tech-aware mode, and
@@ -193,11 +197,11 @@ python3 Python/import_httpx.py -f results.json
 
 # 3. Start the web interface
 python3 Server/server.py
-# Search UI:  http://127.0.0.1:8001
-# Dashboard:  http://127.0.0.1:8001/dashboard
+# Recon Console (default):  http://127.0.0.1:8001
+# Classic search UI:        http://127.0.0.1:8001/search
 ```
 
-The **dashboard** (`/dashboard`) joins httpx, naabu, nuclei and Interactsh data
+The **dashboard** (the landing page, `/`) joins httpx, naabu, nuclei and Interactsh data
 on the asset. Its search bar supports `/body:<str>`, `/title:<str>`, `/url:<str>`
 tokens and `*` wildcards, and its Interactions tab is a live OOB stream fed by:
 
