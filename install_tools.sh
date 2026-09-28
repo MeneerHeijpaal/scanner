@@ -74,6 +74,7 @@ download_tool() {
 download_tool "projectdiscovery/nuclei" "nuclei"
 download_tool "projectdiscovery/naabu" "naabu"
 download_tool "projectdiscovery/httpx" "httpx"
+download_tool "projectdiscovery/interactsh" "interactsh-client"
 
 echo
 echo "All tools were installed in:"
