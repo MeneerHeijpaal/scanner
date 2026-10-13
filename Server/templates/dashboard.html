@@ -99,6 +99,24 @@
   .ext{display:inline-grid;place-items:center;width:20px;height:20px;border-radius:5px;color:var(--muted);
     border:1px solid var(--hair);text-decoration:none;flex:none}
   .ext:hover{color:var(--accent);border-color:color-mix(in srgb,var(--accent) 40%,transparent);background:var(--accent-wash)}
+  /* nuclei per-URL trigger: light gray = not yet run, dark gray = scanned */
+  .nuclei-ico{flex:none;width:22px;height:22px;display:inline-grid;place-items:center;border:0;background:none;
+    padding:0;cursor:pointer;border-radius:5px}
+  .nuclei-ico:hover{background:var(--surface-2)}
+  .nuclei-ico img{width:15px;height:18px;display:block;filter:grayscale(1) brightness(1.5) opacity(.45);transition:filter .15s}
+  .nuclei-ico:hover img{filter:grayscale(1) brightness(1.1) opacity(.8)}
+  .nuclei-ico.scanned img{filter:grayscale(1) brightness(.5) opacity(1)}
+  .nuclei-ico.scanned:hover img{filter:grayscale(1) brightness(.35) opacity(1)}
+  .nuclei-ico.running{cursor:progress}
+  .nuclei-ico.running img{animation:nuPulse .9s ease-in-out infinite;filter:grayscale(0) opacity(.9)}
+  @keyframes nuPulse{0%,100%{opacity:.3}50%{opacity:1}}
+  /* dark theme: invert the gray mapping so the icon stays visible on a dark bg */
+  @media (prefers-color-scheme:dark){:root:not([data-theme="light"]) .nuclei-ico img{filter:grayscale(1) brightness(.95) opacity(.4)}
+    :root:not([data-theme="light"]) .nuclei-ico:hover img{filter:grayscale(1) brightness(1.6) opacity(.75)}
+    :root:not([data-theme="light"]) .nuclei-ico.scanned img{filter:grayscale(1) brightness(2.3) opacity(1)}}
+  :root[data-theme="dark"] .nuclei-ico img{filter:grayscale(1) brightness(.95) opacity(.4)}
+  :root[data-theme="dark"] .nuclei-ico:hover img{filter:grayscale(1) brightness(1.6) opacity(.75)}
+  :root[data-theme="dark"] .nuclei-ico.scanned img{filter:grayscale(1) brightness(2.3) opacity(1)}
   .sev{display:inline-flex;align-items:center;gap:6px;font-size:11.5px;font-weight:600;padding:2px 8px 2px 6px;
     border-radius:999px;white-space:nowrap;border:1px solid var(--sc);color:var(--sc);background:color-mix(in srgb,var(--sc) 12%,transparent)}
   .sev .sq{background:var(--sc)}
@@ -243,6 +261,29 @@ const SEV_VAR={critical:"--crit",high:"--high",medium:"--med",low:"--low",info:"
 const esc=s=>String(s==null?"":s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
 const extIcon=`<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 3h6v6"/><path d="M10 14 21 3"/><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/></svg>`;
 function extLink(url){ if(!url) return ""; return `<a class="ext" href="${esc(url)}" target="_blank" rel="noopener noreferrer" title="Open ${esc(url)}">${extIcon}</a>`; }
+/* Per-URL nuclei trigger shown left of the URL. Light gray until nuclei has run
+   for that URL, dark gray (`.scanned`) afterwards. */
+function nucleiBtn(w,host){
+  const scanned=w.nuclei_scanned?" scanned":"";
+  const title=w.nuclei_scanned?`Nuclei scanned (${w.nuclei_finding_count||0} findings) — click to re-run`:"Run nuclei (-as) on this URL";
+  return `<button class="nuclei-ico${scanned}" title="${esc(title)}" aria-label="Run nuclei on this URL"
+    onclick="event.stopPropagation();runNuclei('${esc(w.id)}','${esc(host)}',this)"><img src="/static/icons/nuclei.png" alt="nuclei"></button>`;
+}
+window.runNuclei=async (id,host,btn)=>{
+  if(btn.classList.contains("running"))return;
+  btn.classList.add("running");btn.title="Running nuclei…";
+  try{
+    const r=await fetch(new URL(`/api/dashboard/nuclei/${encodeURIComponent(id)}`,location.origin),
+      {method:"POST"}).then(x=>x.json()).catch(()=>({}));
+    if(r&&r.ok){
+      openAsset(host);   // refresh drawer: findings now appear and the icon goes dark
+      loadSummary();loadFindings();loadAssets();   // keep KPIs / tables in sync
+    }else{
+      btn.classList.remove("running");
+      alert((r&&r.error)?`Nuclei run failed: ${r.error}`:"Nuclei run failed.");
+    }
+  }catch(e){ btn.classList.remove("running"); alert("Nuclei run failed."); }
+};
 function sevChip(s){s=s||"unknown";return `<span class="sev ${s}"><span class="sq"></span>${SEV_LABEL[s]||s}</span>`;}
 /* Clickable IP: same as typing /ip:<IP> in the search box. stopPropagation so
    it doesn't also open the row's asset drawer. */
@@ -376,9 +417,9 @@ window.openAsset=async host=>{
   document.getElementById("dBody").innerHTML=`
     <div class="d-sec"><div class="d-sec-h">Web endpoints <span class="cnt">httpx · ${web.length}</span></div>
       ${web.length?web.map(w=>`<div class="d-row clickable" onclick="openRecord('${esc(w.id)}','${esc(host)}')" title="Open full details"><div class="r1">
-        <span class="url-cell"><span class="u" style="word-break:break-all">${esc(w.url)}</span>${extLink(w.url)}</span>
+        <span class="url-cell">${nucleiBtn(w,host)}<span class="u" style="word-break:break-all">${esc(w.url)}</span>${extLink(w.url)}</span>
         <span class="stat-code" style="color:${w.status<300?'var(--low)':w.status<400?'var(--med)':'var(--crit)'}">${esc(w.status)}</span></div>
-        <div class="r2">${w.title?esc(w.title)+" · ":""}${(w.tech||[]).map(t=>`<span class="chip">${esc(t)}</span>`).join(" ")}</div></div>`).join(""):`<div class="empty">No web endpoints.</div>`}</div>
+        <div class="r2">${w.title?esc(w.title)+" · ":""}${(w.tech||[]).map(t=>`<span class="chip">${esc(t)}</span>`).join(" ")}${w.nuclei_scanned?` <span class="chip" title="nuclei automatic scan has run">⬣ nuclei · ${w.nuclei_finding_count||0}</span>`:""}</div></div>`).join(""):`<div class="empty">No web endpoints.</div>`}</div>
     <div class="d-sec"><div class="d-sec-h">Open ports &amp; services <span class="cnt">naabu · ${ports.length}</span></div>
       ${ports.length?ports.map(p=>`<div class="d-row"><div class="r1"><span><span class="stat-code">${esc(p.port)}</span> <span class="chip">${esc(p.service)}</span></span><span class="s mono">${esc(p.version)}</span></div></div>`).join(""):`<div class="empty">No open ports.</div>`}</div>
     <div class="d-sec"><div class="d-sec-h">Findings <span class="cnt">nuclei · ${finds.length}</span></div>

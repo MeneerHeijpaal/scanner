@@ -1,37 +1,37 @@
 #!/usr/bin/env python3
 """
-Run ProjectDiscovery's `nuclei` to enrich URLs, applying templates only to the
-URLs that matter, and reporting out-of-band interactions to a self-hosted
-Interactsh server.
+Run ProjectDiscovery's `nuclei` in automatic-scan mode (``-as``) to enrich URLs
+and report out-of-band interactions to a self-hosted Interactsh server.
 
-Two modes:
+Nuclei is no longer part of the batch pipeline (Python/scan.py). It now runs
+on-demand, per URL, from the dashboard: the user clicks the nuclei icon next to a
+URL and the web server calls :func:`scan_url` for that single target.
 
-  1. Workflow mode (default): run the native nuclei workflow
-     ``nuclei-workflows/tech-conditional-workflow.yaml``. Each technology's
-     templates only run against a URL once a detection template matches it
-     (WordPress -> wordpress templates; FrontPage -> CVE-2000-0114).
+Automatic-scan mode (``-as``) lets nuclei fingerprint the target itself and pick
+the matching templates — so there is no hand-maintained technology→template map
+anymore; nuclei autodetects "anything" that applies.
 
-  2. Tech-aware mode (--from-elasticsearch): read the technologies httpx already
-     detected (stored in Elasticsearch) and run nuclei per URL group with just
-     the matching template tags/paths. This guarantees "only WordPress templates
-     on WordPress URLs" using real detection data and avoids wasted requests.
-
-Both modes apply nuclei-config.yaml (per-VPS settings) and the Interactsh server
-from interactsh.config.
+Both the CLI and :func:`scan_url` apply ``config/nuclei-config.yaml`` (per-VPS
+settings) and the Interactsh server from ``config/interactsh.config``.
 
 Usage:
+  # single URL (what the dashboard does under the hood)
+  python3 Python/nuclei_scan.py -u https://example.com -o findings.json
+  # a list of URLs
   python3 Python/nuclei_scan.py -l urls.txt -o findings.json
-  python3 Python/nuclei_scan.py --from-elasticsearch -o findings.json
-  python3 Python/nuclei_scan.py -l urls.txt -o findings.json --import
+  # scan and ingest into Elasticsearch in one go
+  python3 Python/nuclei_scan.py -u https://example.com -o findings.json --import
 """
 
 import argparse
+import json
 import logging
 import shutil
 import subprocess
 import sys
 import tempfile
 from pathlib import Path
+from typing import List, Optional
 
 logging.basicConfig(
     level=logging.INFO,
@@ -40,35 +40,16 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# Map a detected technology (lower-cased substring) to nuclei template tags.
-TECH_TO_TAGS = {
-    'wordpress': ['wordpress'],
-    'joomla': ['joomla'],
-    'drupal': ['drupal'],
-    'magento': ['magento'],
-    'apache': ['apache'],
-    'nginx': ['nginx'],
-    'tomcat': ['tomcat'],
-    'iis': ['iis'],
-    'php': ['php'],
-    'jira': ['jira'],
-    'confluence': ['confluence'],
-    'gitlab': ['gitlab'],
-    'jenkins': ['jenkins'],
-    'grafana': ['grafana'],
-    'phpmyadmin': ['phpmyadmin'],
-}
-
-# Map a detected technology to explicit template paths (resolved by nuclei
-# against its templates directory). Use for one-off, technology-specific CVEs.
-TECH_TO_TEMPLATES = {
-    'frontpage': ['http/cves/2000/CVE-2000-0114.yaml'],
-    'microsoft frontpage': ['http/cves/2000/CVE-2000-0114.yaml'],
-}
+# How long a single automatic scan may run before we give up (seconds).
+DEFAULT_TIMEOUT = 600
 
 
-def find_nuclei(repo_root: Path) -> Path:
-    """Locate the nuclei binary (repo root, bin/, or PATH)."""
+def find_nuclei(repo_root: Path, exit_on_missing: bool = True) -> Optional[Path]:
+    """Locate the nuclei binary (repo root, bin/, or PATH).
+
+    With ``exit_on_missing`` the process exits (CLI behaviour); otherwise returns
+    ``None`` so a caller embedding this module (the web server) can handle it.
+    """
     for candidate in (repo_root / 'nuclei', repo_root / 'bin' / 'nuclei'):
         if candidate.exists():
             return candidate
@@ -76,10 +57,12 @@ def find_nuclei(repo_root: Path) -> Path:
     if on_path:
         return Path(on_path)
     logger.error("nuclei binary not found at ./nuclei, ./bin/nuclei, or on PATH")
-    sys.exit(2)
+    if exit_on_missing:
+        sys.exit(2)
+    return None
 
 
-def read_interactsh(config_path: Path):
+def read_interactsh(config_path: Path) -> dict:
     """Parse interactsh.config -> dict with server_url / server_ip."""
     values = {}
     if not config_path.exists():
@@ -94,9 +77,13 @@ def read_interactsh(config_path: Path):
     return values
 
 
-def base_nuclei_cmd(nuclei: Path, repo_root: Path, interactsh: dict, output_file: Path):
-    """Build the common nuclei argument list (config + interactsh + JSON out)."""
-    cmd = [str(nuclei), '-disable-update-check', '-j', '-o', str(output_file)]
+def base_nuclei_cmd(nuclei: Path, repo_root: Path, interactsh: dict, output_file: Path) -> list:
+    """Build the common nuclei argument list (autodetect + config + interactsh + JSON out).
+
+    ``-as`` (``-automatic-scan``) makes nuclei fingerprint the target and select
+    the templates that apply, instead of being handed a fixed tag/template set.
+    """
+    cmd = [str(nuclei), '-as', '-disable-update-check', '-j', '-o', str(output_file)]
     nuclei_cfg = repo_root / 'config' / 'nuclei-config.yaml'
     if nuclei_cfg.exists():
         cmd += ['-config', str(nuclei_cfg)]
@@ -108,10 +95,14 @@ def base_nuclei_cmd(nuclei: Path, repo_root: Path, interactsh: dict, output_file
     return cmd
 
 
-def run_cmd(cmd):
+def run_cmd(cmd, timeout: Optional[int] = None) -> int:
     """Run a nuclei command, streaming errors. Returns the exit code."""
     logger.info(f"Running: {' '.join(cmd)}")
-    proc = subprocess.run(cmd, capture_output=True, text=True)
+    try:
+        proc = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
+    except subprocess.TimeoutExpired:
+        logger.error(f"nuclei timed out after {timeout}s")
+        return 124
     if proc.stdout:
         logger.info(proc.stdout)
     if proc.returncode != 0 and proc.stderr:
@@ -119,107 +110,71 @@ def run_cmd(cmd):
     return proc.returncode
 
 
-def run_workflow(nuclei, repo_root, interactsh, input_file, output_file):
-    """Mode 1: run the tech-conditional nuclei workflow over a URL list."""
-    workflow = repo_root / 'nuclei-workflows' / 'tech-conditional-workflow.yaml'
-    if not workflow.exists():
-        logger.error(f"Workflow not found at {workflow}")
-        sys.exit(2)
+def parse_findings(output_file: Path) -> List[dict]:
+    """Read nuclei's ``-j`` output (NDJSON) into a list of finding dicts."""
+    findings: List[dict] = []
+    if not output_file.exists():
+        return findings
+    for line in output_file.read_text(errors='replace').splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            rec = json.loads(line)
+            if isinstance(rec, dict):
+                findings.append(rec)
+        except json.JSONDecodeError as e:
+            logger.warning(f"Skipping malformed nuclei output line: {e}")
+    return findings
+
+
+def run_auto(nuclei: Path, repo_root: Path, interactsh: dict, *,
+             url: Optional[str] = None, input_file: Optional[Path] = None,
+             output_file: Path, timeout: Optional[int] = None) -> int:
+    """Run ``nuclei -as`` against a single URL or a list file. Returns exit code."""
     cmd = base_nuclei_cmd(nuclei, repo_root, interactsh, output_file)
-    cmd += ['-l', str(input_file), '-w', str(workflow)]
-    return run_cmd(cmd)
+    if url:
+        cmd += ['-u', url]
+    else:
+        cmd += ['-l', str(input_file)]
+    # Always create the output file so "ran, no findings" is distinguishable.
+    output_file.write_text('')
+    return run_cmd(cmd, timeout=timeout)
 
 
-def tags_for_tech(tech_list):
-    """Return (tags set, template paths set) for a URL's detected technologies."""
-    tags = set()
-    templates = set()
-    for tech in tech_list or []:
-        t = str(tech).lower()
-        for needle, mapped in TECH_TO_TAGS.items():
-            if needle in t:
-                tags.update(mapped)
-        for needle, mapped in TECH_TO_TEMPLATES.items():
-            if needle in t:
-                templates.update(mapped)
-    return tags, templates
+def scan_url(url: str, repo_root: Optional[Path] = None,
+             timeout: int = DEFAULT_TIMEOUT) -> List[dict]:
+    """Run an automatic (``-as``) nuclei scan against a single URL.
 
-
-def run_tech_aware(nuclei, repo_root, interactsh, output_file, config):
-    """Mode 2: read detected tech from Elasticsearch and scan per tech group."""
-    sys.path.insert(0, str(repo_root / 'Server'))
-    from elasticsearch_manager import ElasticsearchManager
-
-    config.setdefault('elasticsearch', {})['enabled'] = True
-    store = ElasticsearchManager(config)
-    if not store.is_connected:
-        logger.error("Cannot reach Elasticsearch for tech-aware scanning")
-        sys.exit(1)
-
-    # Group URLs by their (tags, templates) signature so each nuclei run is
-    # scoped to exactly the templates that matter for that group.
-    groups = {}
-    query = {"bool": {"filter": [{"exists": {"field": "tech"}}]}}
-    for doc in store.scan(query, source=['url', 'tech']):
-        url = doc.get('url')
-        if not url:
-            continue
-        tags, templates = tags_for_tech(doc.get('tech'))
-        if not tags and not templates:
-            continue
-        key = (frozenset(tags), frozenset(templates))
-        groups.setdefault(key, []).append(url)
-
-    final = Path(output_file)
-    final.write_text('')  # always create the output file (empty = ran, no findings)
-
-    if not groups:
-        logger.warning("No URLs with a mapped technology found in Elasticsearch; "
-                       f"wrote empty {final}")
-        return 0
-
-    logger.info(f"Prepared {len(groups)} technology group(s) for scanning")
-
-    rc = 0
-    for (tags, templates), urls in groups.items():
-        tmp_urls = tempfile.NamedTemporaryFile('w', suffix='.txt', delete=False,
-                                               prefix='nuclei-urls-')
-        tmp_urls.write('\n'.join(urls))
-        tmp_urls.close()
-        tmp_out = tempfile.NamedTemporaryFile('w', suffix='.json', delete=False,
-                                              prefix='nuclei-out-')
-        tmp_out.close()
-
-        cmd = base_nuclei_cmd(nuclei, repo_root, interactsh, Path(tmp_out.name))
-        cmd += ['-l', tmp_urls.name]
-        if tags:
-            cmd += ['-tags', ','.join(sorted(tags))]
-        for tpl in sorted(templates):
-            cmd += ['-t', tpl]
-
-        logger.info(f"Group: {len(urls)} URL(s), tags={sorted(tags)}, "
-                    f"templates={sorted(templates)}")
-        rc |= run_cmd(cmd)
-
-        # Append this group's findings to the combined output.
-        out_text = Path(tmp_out.name).read_text()
-        if out_text:
-            with open(final, 'a') as f:
-                f.write(out_text if out_text.endswith('\n') else out_text + '\n')
-        Path(tmp_urls.name).unlink(missing_ok=True)
-        Path(tmp_out.name).unlink(missing_ok=True)
-
-    logger.info(f"Tech-aware scan completed. Combined output: {final}")
-    return rc
+    This is the entry point the web server calls when the user clicks the nuclei
+    icon next to a URL. Returns the parsed findings (possibly empty). Raises
+    :class:`RuntimeError` if the nuclei binary cannot be found.
+    """
+    repo_root = repo_root or Path(__file__).resolve().parents[1]
+    nuclei = find_nuclei(repo_root, exit_on_missing=False)
+    if nuclei is None:
+        raise RuntimeError("nuclei binary not found (looked in ./nuclei, ./bin/nuclei, PATH)")
+    interactsh = read_interactsh(repo_root / 'config' / 'interactsh.config')
+    tmp_out = tempfile.NamedTemporaryFile('w', suffix='.json', delete=False,
+                                          prefix='nuclei-as-')
+    tmp_out.close()
+    out_path = Path(tmp_out.name)
+    try:
+        run_auto(nuclei, repo_root, interactsh, url=url, output_file=out_path, timeout=timeout)
+        return parse_findings(out_path)
+    finally:
+        out_path.unlink(missing_ok=True)
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Run nuclei enrichment (workflow or tech-aware)")
+    parser = argparse.ArgumentParser(
+        description="Run nuclei automatic-scan (-as) enrichment over a URL or list")
     group = parser.add_mutually_exclusive_group(required=True)
-    group.add_argument('-l', '--list', help='File of URLs to scan (workflow mode)')
-    group.add_argument('--from-elasticsearch', action='store_true',
-                       help='Scan URLs grouped by tech detected in Elasticsearch')
+    group.add_argument('-u', '--url', help='A single URL to scan')
+    group.add_argument('-l', '--list', help='File of URLs to scan (one per line)')
     parser.add_argument('-o', '--output', required=True, help='Output JSON findings file')
+    parser.add_argument('--timeout', type=int, default=DEFAULT_TIMEOUT,
+                        help=f'Per-run timeout in seconds (default {DEFAULT_TIMEOUT})')
     parser.add_argument('--import', dest='do_import', action='store_true',
                         help='Import findings into Elasticsearch after scanning')
     args = parser.parse_args()
@@ -229,17 +184,16 @@ def main():
     interactsh = read_interactsh(repo_root / 'config' / 'interactsh.config')
     output_file = Path(args.output)
 
-    if args.from_elasticsearch:
-        import yaml
-        config_file = repo_root / 'config' / 'server-config.yaml'
-        config = yaml.safe_load(config_file.read_text()) if config_file.exists() else {}
-        run_tech_aware(nuclei, repo_root, interactsh, output_file, config)
-    else:
+    if args.list:
         input_file = Path(args.list).expanduser().resolve()
         if not input_file.is_file():
             logger.error(f"Input file not found: {input_file}")
             sys.exit(2)
-        run_workflow(nuclei, repo_root, interactsh, input_file, output_file)
+        run_auto(nuclei, repo_root, interactsh, input_file=input_file,
+                 output_file=output_file, timeout=args.timeout)
+    else:
+        run_auto(nuclei, repo_root, interactsh, url=args.url,
+                 output_file=output_file, timeout=args.timeout)
 
     if args.do_import:
         if output_file.exists() and output_file.stat().st_size > 0:

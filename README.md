@@ -1,11 +1,12 @@
 # Scanner - Reconnaissance Toolkit
 
 A web-based reconnaissance toolkit built around the ProjectDiscovery stack. It
-probes targets with **httpx**, scans ports with **naabu**, enriches results with
-**nuclei** (using a self-hosted **Interactsh** server for out-of-band detection),
-stores everything in **Elasticsearch**, and can spread the work across multiple
-**Hetzner** VPSes with Terraform. A Flask web interface provides fast search and
-filtering over the results.
+probes targets with **httpx**, scans ports with **naabu**, and enriches
+individual URLs on-demand with **nuclei** in automatic-scan mode (using a
+self-hosted **Interactsh** server for out-of-band detection), stores everything
+in **Elasticsearch**, and can spread the work across multiple **Hetzner** VPSes
+with Terraform. A Flask web interface provides fast search and filtering over the
+results.
 
 ## Features
 
@@ -15,7 +16,7 @@ filtering over the results.
 - **Advanced Filtering**: IP/URL patterns, native CIDR notation, wildcard matching (e.g., `192.168.x.1`)
 - **Technology Detection**: Filter by detected web technologies (Apache, nginx, WordPress, etc.)
 - **Port & Service Data**: naabu port/service/version results indexed alongside HTTP records
-- **Tech-conditional Enrichment**: nuclei runs a technology's templates only against URLs that expose that technology
+- **On-demand Enrichment**: nuclei is not part of the batch pipeline — click the nuclei icon next to a URL in the dashboard to run an automatic scan (`-as`) for just that URL; the icon goes from light gray to dark gray once it has run
 - **Out-of-band Detection**: self-hosted Interactsh server for blind SSRF/RCE/etc.
 - **Hash Labeling**: Tag and categorize responses using SHA256 hashes (stored in local SQLite)
 - **Export Capabilities**: Download URLs, domains, raw responses, and headers
@@ -27,12 +28,12 @@ filtering over the results.
 ```
 Scanner/
 ├── Python/                      # Scanners and import scripts
-│   ├── scan.py                  # Pipeline orchestrator (httpx -> naabu -> nuclei, + ingest)
+│   ├── scan.py                  # Pipeline orchestrator (httpx -> naabu, + ingest)
 │   ├── scanner.py               # httpx scanner wrapper
 │   ├── import_httpx.py          # Import httpx results into Elasticsearch
 │   ├── naabu_scan.py            # naabu port scanner wrapper
 │   ├── import_naabu.py          # Import naabu results into Elasticsearch
-│   ├── nuclei_scan.py           # nuclei enrichment (workflow / tech-aware)
+│   ├── nuclei_scan.py           # on-demand nuclei automatic scan (-as) per URL
 │   ├── import_nuclei.py         # Import nuclei findings into Elasticsearch
 │   ├── interactsh_stream.py     # Stream Interactsh interactions into Elasticsearch
 │   ├── distribute_targets.py    # Shard a target list across VPS workers
@@ -50,7 +51,7 @@ Scanner/
 │   ├── ports.conf               # naabu ports to scan
 │   ├── nuclei-config.yaml       # nuclei per-VPS settings
 │   └── interactsh.config        # self-hosted Interactsh server
-├── nuclei-workflows/            # nuclei tech-conditional workflow + detections
+├── nuclei-workflows/            # legacy nuclei workflow (no longer used; nuclei now runs -as per URL)
 ├── terraform/                   # Hetzner multi-VPS provisioning
 ├── Documentation/               # Component + architecture docs
 ├── bin/                         # Location for the binaries (httpx/naabu/nuclei/interactsh-client)
@@ -59,9 +60,10 @@ Scanner/
 └── requirements.txt             # Python dependencies
 ```
 
-The scan pipeline is: **httpx** (probe) → **naabu** (ports) → **nuclei**
-(tech-conditional enrichment, with **Interactsh** for out-of-band detection), all
-stored in **Elasticsearch** and served by the Flask UI. See
+The scan pipeline is: **httpx** (probe) → **naabu** (ports), all stored in
+**Elasticsearch** and served by the Flask UI. **nuclei** runs separately,
+on-demand per URL from the dashboard (automatic-scan `-as`, with **Interactsh**
+for out-of-band detection). See
 [`Documentation/`](Documentation/) for full details on each component and the
 overall architecture — [`Documentation/architecture.md`](Documentation/architecture.md)
 is the best starting point.
@@ -155,9 +157,9 @@ pip install -r requirements.txt
 
 ```bash
 mkdir -p Elastic_Data
-# The 777 mode is permissive but avoids Docker volume permission issues;
+# The 755 mode is permissive but avoids Docker volume permission issues;
 # tighten it if you prefer.
-chmod 777 Elastic_Data
+chmod 755 Elastic_Data
 
 docker compose up -d
 curl http://localhost:9200            # verify it is up
@@ -180,8 +182,9 @@ is no manual index setup.
 
 ### One command (recommended)
 
-`Python/scan.py` runs the whole pipeline — httpx → naabu → nuclei — and ingests
-each stage into Elasticsearch:
+`Python/scan.py` runs the pipeline — httpx → naabu — and ingests each stage into
+Elasticsearch. nuclei is no longer part of this pipeline; run it per URL from the
+dashboard (see below):
 
 ```bash
 source .venv/bin/activate
@@ -193,11 +196,12 @@ python3 Server/server.py                  # http://127.0.0.1:8001  (Recon Consol
 
 The **Recon Console dashboard is the landing page** (`/`). The classic search UI
 is at `/search`. In the dashboard, click a host in **Assets** to open its drawer,
-then click any URL under **Web endpoints** for the full per-URL detail.
+then click any URL under **Web endpoints** for the full per-URL detail. The small
+**nuclei icon left of each URL** runs an automatic scan (`-as`) for just that URL
+when clicked — light gray means "not yet run", dark gray means "scanned".
 
-Useful flags: `--skip-naabu` / `--skip-nuclei` / `--skip-httpx` to run a subset,
-`--nuclei-mode workflow` to run the workflow instead of the tech-aware mode, and
-`--no-import` to scan without ingesting. Output for each run is written to a
+Useful flags: `--skip-naabu` / `--skip-httpx` to run a subset, and `--no-import`
+to scan without ingesting. Output for each run is written to a
 `scan-<timestamp>/` folder.
 
 ### Step by step
@@ -244,12 +248,16 @@ Edit `config/ports.conf` to change which ports are scanned (default:
 
 ### Enrichment (nuclei + Interactsh)
 
-```bash
-# Tech-aware: read technologies httpx detected from Elasticsearch and run only
-# the matching templates per URL group; import findings when done.
-python3 Python/nuclei_scan.py --from-elasticsearch -o findings.json --import
+nuclei runs on-demand, per URL, in automatic-scan mode (`-as`) — nuclei
+fingerprints the target itself and picks the templates that apply. The usual way
+to trigger it is the **nuclei icon next to a URL in the dashboard**, but you can
+also run it from the CLI:
 
-# Or run the tech-conditional workflow over a URL list directly:
+```bash
+# Automatic scan of a single URL; import the findings when done.
+python3 Python/nuclei_scan.py -u https://example.com -o findings.json --import
+
+# Or automatic-scan a list of URLs.
 python3 Python/nuclei_scan.py -l urls.txt -o findings.json --import
 ```
 
@@ -320,9 +328,9 @@ python3 Python/naabu_scan.py -l urls.txt -o ports.json [--import] [-c ports.conf
 python3 Python/naabu_scan.py -host example.com -o ports.json
 python3 Python/import_naabu.py -f ports.json [--es-index scanner_ports]
 
-# nuclei
-python3 Python/nuclei_scan.py -l urls.txt -o findings.json [--import]        # workflow mode
-python3 Python/nuclei_scan.py --from-elasticsearch -o findings.json [--import]  # tech-aware
+# nuclei (automatic scan, -as)
+python3 Python/nuclei_scan.py -u https://example.com -o findings.json [--import]   # single URL
+python3 Python/nuclei_scan.py -l urls.txt -o findings.json [--import]              # list of URLs
 python3 Python/import_nuclei.py -f findings.json [--es-index scanner_findings]
 
 # distribute across workers
@@ -423,9 +431,11 @@ Extending the web app:
    `Server/routes.py` (parameter extraction), and
    `Server/utils.py` `build_search_query()` (add an Elasticsearch clause).
 2. **New export format** — add a route in `Server/routes.py` and a button in the template.
-3. **New nuclei tech mapping** — extend `TECH_TO_TAGS` / `TECH_TO_TEMPLATES` in
-   `Python/nuclei_scan.py`, or add a `detect → subtemplates` pair to
-   `nuclei-workflows/tech-conditional-workflow.yaml`.
+3. **On-demand nuclei** — the per-URL run endpoint is
+   `POST /api/dashboard/nuclei/<record-id>` in `Server/dashboard.py`; it calls
+   `scan_url()` in `Python/nuclei_scan.py` (automatic scan, `-as`), indexes the
+   findings, and marks the record scanned. The icon lives in the Assets drawer in
+   `Server/templates/dashboard.html` (`nucleiBtn` / `runNuclei`).
 
 Quick checks:
 

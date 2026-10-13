@@ -2,15 +2,18 @@
 """
 Scanner pipeline orchestrator.
 
-Runs the full recon pipeline over a list of targets in one command:
+Runs the recon pipeline over a list of targets in one command:
 
     httpx  (probe)   -> import into Elasticsearch  (scanner_records)
     naabu  (ports)   -> import into Elasticsearch  (scanner_ports)
-    nuclei (enrich)  -> import into Elasticsearch  (scanner_findings)
 
 Each stage is delegated to the existing per-tool scripts (scanner.py,
-naabu_scan.py, nuclei_scan.py and their import_*.py counterparts), so this is
-purely orchestration — the tools remain usable on their own.
+naabu_scan.py and their import_*.py counterparts), so this is purely
+orchestration — the tools remain usable on their own.
+
+Nuclei is intentionally NOT part of this batch pipeline. Once URLs are ingested,
+nuclei runs on-demand per URL from the dashboard (click the nuclei icon next to a
+URL), using automatic-scan mode (``-as``). See Python/nuclei_scan.py.
 
 Interactsh interactions are collected continuously by Python/interactsh_stream.py
 and are intentionally not part of this batch pipeline.
@@ -19,7 +22,6 @@ Usage:
     python3 Python/scan.py -l urls.txt
     python3 Python/scan.py -u https://example.com
     python3 Python/scan.py -l urls.txt -o run1/ --skip-naabu
-    python3 Python/scan.py -l urls.txt --nuclei-mode workflow
     python3 Python/scan.py -l urls.txt --no-import        # scan only, no ingestion
 """
 
@@ -57,17 +59,13 @@ def run_step(name, cmd):
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Run the full httpx -> naabu -> nuclei pipeline and ingest into Elasticsearch")
+        description="Run the httpx -> naabu pipeline and ingest into Elasticsearch")
     src = parser.add_mutually_exclusive_group(required=True)
     src.add_argument("-l", "--list", help="File of target URLs/hosts (one per line)")
     src.add_argument("-u", "--url", help="A single target URL/host")
     parser.add_argument("-o", "--outdir", help="Directory for scan output (default: scan-<timestamp>/)")
     parser.add_argument("--skip-httpx", action="store_true", help="Skip the httpx stage")
     parser.add_argument("--skip-naabu", action="store_true", help="Skip the naabu stage")
-    parser.add_argument("--skip-nuclei", action="store_true", help="Skip the nuclei stage")
-    parser.add_argument("--nuclei-mode", choices=["tech-aware", "workflow"], default="tech-aware",
-                        help="tech-aware reads httpx-detected tech from Elasticsearch (default); "
-                             "workflow runs the tech-conditional workflow over the target list")
     parser.add_argument("--no-import", action="store_true",
                         help="Run the scans but do not ingest results into Elasticsearch")
     args = parser.parse_args()
@@ -90,7 +88,6 @@ def main():
     outdir.mkdir(parents=True, exist_ok=True)
     httpx_out = outdir / "httpx.json"
     ports_out = outdir / "ports.json"
-    findings_out = outdir / "findings.json"
 
     do_import = not args.no_import
     results = []  # list of (name, status) where status is "ok" | "fail" | "skip"
@@ -124,16 +121,6 @@ def main():
             run_stage("naabu",
                       [sys.executable, str(PY / "naabu_scan.py"), "-l", str(targets), "-o", str(ports_out)],
                       PY / "import_naabu.py", ports_out)
-
-        if not args.skip_nuclei:
-            if args.nuclei_mode == "tech-aware":
-                nuclei_cmd = [sys.executable, str(PY / "nuclei_scan.py"),
-                              "--from-elasticsearch", "-o", str(findings_out)]
-            else:
-                nuclei_cmd = [sys.executable, str(PY / "nuclei_scan.py"),
-                              "-l", str(targets), "-o", str(findings_out)]
-            logger.info(f"nuclei mode: {args.nuclei_mode}")
-            run_stage("nuclei", nuclei_cmd, PY / "import_nuclei.py", findings_out)
     finally:
         if tmp_targets and tmp_targets.exists():
             try:

@@ -22,10 +22,36 @@ Tokens combine with AND, so ``/title:login /url:*.acme.com`` narrows to both.
 """
 
 from flask import render_template, request, jsonify
+import hashlib
 import logging
 import re
+import sys
+from datetime import datetime, timezone
+from pathlib import Path
 
 logger = logging.getLogger(__name__)
+
+# nuclei_scan lives in the repo's Python/ dir; make it importable so the
+# on-demand per-URL nuclei route can call scan_url().
+_PY_DIR = Path(__file__).resolve().parents[1] / "Python"
+if str(_PY_DIR) not in sys.path:
+    sys.path.insert(0, str(_PY_DIR))
+try:
+    import nuclei_scan
+except Exception as _e:  # pragma: no cover - only if the Python/ dir moves
+    nuclei_scan = None
+    logger.warning(f"Could not import nuclei_scan; on-demand nuclei disabled: {_e}")
+
+
+def _finding_doc_id(rec):
+    """Stable id for a nuclei finding (template-id + matched-at).
+
+    Mirrors Python/import_nuclei.finding_doc_id so re-running nuclei updates a
+    finding in place instead of duplicating it.
+    """
+    key = f"{rec.get('template-id', rec.get('templateID', ''))}|" \
+          f"{rec.get('matched-at', rec.get('matched', rec.get('host', '')))}"
+    return hashlib.sha1(key.encode('utf-8', errors='replace')).hexdigest()
 
 TOKEN_RE = re.compile(r'/(body|title|url|ip|label):', re.IGNORECASE)
 SEVERITY_ORDER = ["critical", "high", "medium", "low", "info", "unknown"]
@@ -375,7 +401,8 @@ def register_dashboard_routes(app, store, config, utils):
         term = {"term": {"host": host}}
 
         web = store.raw_search(IDX_RECORDS, query=term, size=100,
-                               source=["url", "status_code", "title", "tech", "content_length"])
+                               source=["url", "status_code", "title", "tech", "content_length",
+                                       "nuclei_scanned", "nuclei_finding_count"])
         ports = store.raw_search(IDX_PORTS, query=term, size=200,
                                  sort=[{"port": {"order": "asc"}}],
                                  source=["port", "service", "version"])
@@ -392,6 +419,8 @@ def register_dashboard_routes(app, store, config, utils):
                 "status": s.get("status_code", ""),
                 "title": s.get("title", ""),
                 "tech": s.get("tech", []) or [],
+                "nuclei_scanned": bool(s.get("nuclei_scanned")),
+                "nuclei_finding_count": s.get("nuclei_finding_count", 0) or 0,
             })
         port_rows = [{
             "port": h["_source"].get("port", ""),
@@ -478,6 +507,64 @@ def register_dashboard_routes(app, store, config, utils):
             "has_raw_header": bool(item.get("raw_header")),
             "has_request": bool(item.get("request")),
         })
+
+    @app.route("/api/dashboard/nuclei/<id>", methods=["POST"])
+    def dashboard_run_nuclei(id):
+        """Run an on-demand ``nuclei -as`` scan for a single URL (by record id).
+
+        Triggered when the user clicks the nuclei icon next to a URL in the asset
+        drawer. Runs automatic-scan mode against that URL, indexes any findings
+        (host-joined so they show up for the asset), and marks the record as
+        scanned so the icon renders in its "scanned" (dark) state afterwards.
+        """
+        if nuclei_scan is None:
+            return jsonify({"error": "nuclei integration unavailable"}), 503
+
+        doc_id = utils.validate_doc_id(id)
+        if not doc_id:
+            return jsonify({"error": "invalid id"}), 400
+        item = store.get(doc_id)
+        if not item:
+            return jsonify({"error": "not found"}), 404
+        url = item.get("url")
+        if not url:
+            return jsonify({"error": "record has no url"}), 400
+        host = item.get("host") or item.get("ip") or ""
+
+        try:
+            findings = nuclei_scan.scan_url(url)
+        except Exception as e:
+            logger.error(f"nuclei scan failed for {url}: {e}")
+            return jsonify({"error": f"nuclei scan failed: {e}"}), 500
+
+        now = datetime.now(timezone.utc).isoformat()
+        indexed = 0
+        rows = []
+        for rec in findings:
+            rec.setdefault("timestamp", now)
+            # Join findings to the asset by host so the drawer / dashboard pick
+            # them up (nuclei's own host may carry a port or differ slightly).
+            if host:
+                rec["host"] = host
+            if store.index_into(IDX_FINDINGS, _finding_doc_id(rec), rec):
+                indexed += 1
+            info = rec.get("info", {}) or {}
+            rows.append({
+                "id": rec.get("template-id", rec.get("templateID", "")),
+                "name": info.get("name", ""),
+                "severity": (info.get("severity") or "unknown").lower(),
+                "matched_at": rec.get("matched-at", ""),
+            })
+
+        store.update_document(doc_id, {
+            "nuclei_scanned": True,
+            "nuclei_scanned_at": now,
+            "nuclei_finding_count": len(findings),
+        })
+        rows.sort(key=lambda r: SEVERITY_RANK.get(r["severity"], 99))
+        return jsonify({"ok": True, "scanned": True, "id": doc_id, "url": url,
+                        "host": host, "finding_count": len(findings),
+                        "indexed": indexed, "findings": rows})
 
     @app.route("/api/dashboard/interactions")
     def dashboard_interactions():
