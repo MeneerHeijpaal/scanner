@@ -165,6 +165,11 @@ class ElasticsearchManager:
                         },
                     },
                     "body_decoded": {"type": "text", "analyzer": "standard"},
+                    # On-demand nuclei enrichment (set when the user runs nuclei
+                    # for a URL from the dashboard).
+                    "nuclei_scanned": {"type": "boolean"},
+                    "nuclei_scanned_at": {"type": "date", "ignore_malformed": True},
+                    "nuclei_finding_count": {"type": "integer"},
                     **stored_only,
                 },
             },
@@ -207,7 +212,12 @@ class ElasticsearchManager:
         try:
             self.client.indices.put_mapping(
                 index=self.index_name,
-                properties={"title": {"type": "wildcard"}},
+                properties={
+                    "title": {"type": "wildcard"},
+                    "nuclei_scanned": {"type": "boolean"},
+                    "nuclei_scanned_at": {"type": "date", "ignore_malformed": True},
+                    "nuclei_finding_count": {"type": "integer"},
+                },
             )
         except Exception as e:
             logger.debug(f"ensure_mappings: {e}")
@@ -318,6 +328,28 @@ class ElasticsearchManager:
         except Exception as e:
             logger.error(f"Bulk indexing failed: {e}")
             return (0, 0)
+
+    def update_document(self, doc_id: str, fields: Dict[str, Any]) -> bool:
+        """Partially update a record (merge ``fields`` into the existing doc)."""
+        if not self.is_connected or not self.client:
+            return False
+        try:
+            self.client.update(index=self.index_name, id=doc_id, doc=fields)
+            return True
+        except Exception as e:
+            logger.warning(f"Failed to update document {doc_id}: {e}")
+            return False
+
+    def index_into(self, index: str, doc_id: str, source: Dict[str, Any]) -> bool:
+        """Index (upsert) a single document into an arbitrary index by id."""
+        if not self.is_connected or not self.client:
+            return False
+        try:
+            self.client.index(index=index, id=doc_id, document=source)
+            return True
+        except Exception as e:
+            logger.warning(f"Failed to index into {index}: {e}")
+            return False
 
     def delete_document(self, doc_id: str) -> bool:
         """Delete a document by id (ignores 404)."""
