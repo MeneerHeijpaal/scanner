@@ -155,9 +155,9 @@ pip install -r requirements.txt
 
 ```bash
 mkdir -p Elastic_Data
-# The 777 mode is permissive but avoids Docker volume permission issues;
+# The 755 mode is permissive but avoids Docker volume permission issues;
 # tighten it if you prefer.
-chmod 777 Elastic_Data
+chmod 755 Elastic_Data
 
 docker compose up -d
 curl http://localhost:9200            # verify it is up
