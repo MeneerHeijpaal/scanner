@@ -180,6 +180,56 @@ def _finding_url(host, matched_at):
     return f"https://{host}" if host else ""
 
 
+def _dedupe(seq):
+    """Order-preserving de-duplication."""
+    seen, out = set(), []
+    for x in seq:
+        if x and x not in seen:
+            seen.add(x)
+            out.append(x)
+    return out
+
+
+def _split_ips(*sources):
+    """Split resolved IPs from one or more record sources into (ipv4, ipv6).
+
+    httpx stores IPv4 in ``host_ip`` / ``a`` and IPv6 in ``aaaa`` (the top-level
+    ``ip`` field is unused here). IPv6 is distinguished by a ``:`` in the address.
+    """
+    v4, v6 = [], []
+    for source in sources:
+        if not isinstance(source, dict):
+            continue
+        vals = [source.get("host_ip")]
+        vals += source.get("a") or []
+        vals += source.get("aaaa") or []
+        for val in vals:
+            if not isinstance(val, str) or not val:
+                continue
+            (v6 if ":" in val else v4).append(val)
+    return _dedupe(v4), _dedupe(v6)
+
+
+def _dedupe_ports(hits):
+    """Collapse naabu port docs to one entry per port number (drops v4/v6 dups).
+
+    Returns a list of {port, service, product} sorted by port, keeping the first
+    non-empty service/product seen for each port.
+    """
+    by_port = {}
+    for h in hits:
+        s = h.get("_source", {}) if "_source" in h else h
+        port = s.get("port")
+        if port is None:
+            continue
+        entry = by_port.setdefault(port, {"port": port, "service": "", "product": ""})
+        if not entry["service"]:
+            entry["service"] = s.get("name", "") or s.get("service", "")
+        if not entry["product"]:
+            entry["product"] = s.get("product", "")
+    return [by_port[p] for p in sorted(by_port, key=lambda x: (isinstance(x, str), x))]
+
+
 def _is_oob(source, tags):
     """Whether a finding was confirmed out-of-band (Interactsh)."""
     if source.get("interactsh_protocol") or source.get("interaction"):
@@ -343,8 +393,9 @@ def register_dashboard_routes(app, store, config, utils):
         hq = _host_query(parsed)
 
         rec = store.raw_search(IDX_RECORDS, query=rq, size=0, aggs={
-            "hosts": {"terms": {"field": "host", "size": 200, "order": {"_count": "desc"}},
-                      "aggs": {"sample": {"top_hits": {"size": 1, "_source": ["ip", "url"]}}}},
+            "hosts": {"terms": {"field": "host", "size": 2000, "order": {"_count": "desc"}},
+                      "aggs": {"sample": {"top_hits": {"size": 5, "_source": [
+                          "url", "scheme", "host_ip", "a", "aaaa", "nuclei_scanned"]}}}},
         })
         port_agg = store.raw_search(IDX_PORTS, query=hq, size=0, aggs={
             "hosts": {"terms": {"field": "host", "size": 2000}}})
@@ -363,33 +414,55 @@ def register_dashboard_routes(app, store, config, utils):
         rows = []
         for b in _dig(rec.get("aggregations", {}), "hosts.buckets") or []:
             host = b["key"]
-            sample = (_dig(b, "sample.hits.hits") or [{}])[0].get("_source", {})
+            samples = [h.get("_source", {}) for h in (_dig(b, "sample.hits.hits") or [])]
+            first = samples[0] if samples else {}
+            ipv4, ipv6 = _split_ips(*samples)
+            # Prefer an https endpoint as the representative URL.
+            url = next((s.get("url") for s in samples if s.get("scheme") == "https" and s.get("url")),
+                       first.get("url", "")) or (f"https://{host}" if host else "")
             rows.append({
                 "host": host,
-                "ip": sample.get("ip", ""),
-                "url": sample.get("url", "") or (f"https://{host}" if host else ""),
+                "ipv4": ipv4,
+                "ipv6": ipv6,
+                "url": url,
                 "endpoints": b["doc_count"],
                 "ports": ports_by_host.get(host, 0),
                 "findings": find_by_host.get(host, 0),
                 "top_severity": topsev_by_host.get(host, "info"),
+                "nuclei_scanned": any(s.get("nuclei_scanned") for s in samples),
             })
         rows.sort(key=lambda r: (-r["findings"], -r["endpoints"], r["host"]))
         return jsonify({"rows": rows, "total": len(rows)})
 
     @app.route("/api/dashboard/ports")
     def dashboard_ports():
-        """Open ports / services table."""
+        """Open ports grouped into one row per host (URLs, IPs and ports joined).
+
+        Dual-stack hosts report the same port on both their IPv4 and IPv6
+        addresses; those are collapsed to one entry per port number. IPs are split
+        into IPv4 / IPv6 for display.
+        """
         parsed = parse_query(_q())
-        resp = store.raw_search(IDX_PORTS, query=_host_query(parsed), size=500,
+        resp = store.raw_search(IDX_PORTS, query=_host_query(parsed), size=10000,
                                 sort=[{"host": {"order": "asc"}}, {"port": {"order": "asc"}}],
-                                source=["host", "ip", "port", "service", "version"])
+                                source=["host", "port", "name", "product", "ip"])
+        # Group flat port docs by host (top_hits inner window caps at 100, so we
+        # group client-side instead).
+        grouped = {}
+        for h in _dig(resp, "hits.hits") or []:
+            s = h.get("_source", {})
+            host = s.get("host", "")
+            g = grouped.setdefault(host, {"hits": [], "v4": [], "v6": []})
+            g["hits"].append(h)
+            ip = s.get("ip")
+            if isinstance(ip, str) and ip:
+                (g["v6"] if ":" in ip else g["v4"]).append(ip)
         rows = [{
-            "host": h["_source"].get("host", ""),
-            "ip": h["_source"].get("ip", ""),
-            "port": h["_source"].get("port", ""),
-            "service": h["_source"].get("service", ""),
-            "version": h["_source"].get("version", ""),
-        } for h in _dig(resp, "hits.hits") or []]
+            "host": host,
+            "ipv4": _dedupe(g["v4"]),
+            "ipv6": _dedupe(g["v6"]),
+            "ports": _dedupe_ports(g["hits"]),
+        } for host, g in sorted(grouped.items())]
         return jsonify({"rows": rows, "total": len(rows)})
 
     @app.route("/api/dashboard/asset")
@@ -401,32 +474,35 @@ def register_dashboard_routes(app, store, config, utils):
         term = {"term": {"host": host}}
 
         web = store.raw_search(IDX_RECORDS, query=term, size=100,
-                               source=["url", "status_code", "title", "tech", "content_length",
+                               source=["url", "scheme", "status_code", "title", "tech",
+                                       "content_length", "host_ip", "a", "aaaa",
                                        "nuclei_scanned", "nuclei_finding_count"])
-        ports = store.raw_search(IDX_PORTS, query=term, size=200,
+        ports = store.raw_search(IDX_PORTS, query=term, size=500,
                                  sort=[{"port": {"order": "asc"}}],
-                                 source=["port", "service", "version"])
+                                 source=["port", "name", "product", "ip"])
         finds = store.raw_search(IDX_FINDINGS, query=term, size=200,
                                  source=["template-id", "info", "matched-at",
                                          "interactsh_protocol", "interaction"])
 
+        web_hits = _dig(web, "hits.hits") or []
         endpoints = []
-        for h in _dig(web, "hits.hits") or []:
+        for h in web_hits:
             s = h["_source"]
             endpoints.append({
                 "id": h["_id"],
                 "url": s.get("url", ""),
+                "scheme": s.get("scheme", ""),
                 "status": s.get("status_code", ""),
                 "title": s.get("title", ""),
                 "tech": s.get("tech", []) or [],
                 "nuclei_scanned": bool(s.get("nuclei_scanned")),
                 "nuclei_finding_count": s.get("nuclei_finding_count", 0) or 0,
             })
-        port_rows = [{
-            "port": h["_source"].get("port", ""),
-            "service": h["_source"].get("service", ""),
-            "version": h["_source"].get("version", ""),
-        } for h in _dig(ports, "hits.hits") or []]
+        # Prefer https first, then http, then anything else.
+        endpoints.sort(key=lambda e: (0 if e["scheme"] == "https" else 1 if e["scheme"] == "http" else 2,
+                                      e["url"]))
+        ipv4, ipv6 = _split_ips(*(h["_source"] for h in web_hits))
+        port_rows = _dedupe_ports(_dig(ports, "hits.hits") or [])
         finding_rows = []
         for h in _dig(finds, "hits.hits") or []:
             s = h["_source"]
@@ -443,7 +519,7 @@ def register_dashboard_routes(app, store, config, utils):
                 "oob": _is_oob(s, tags),
             })
         finding_rows.sort(key=lambda r: SEVERITY_RANK.get(r["severity"], 99))
-        return jsonify({"host": host, "endpoints": endpoints,
+        return jsonify({"host": host, "endpoints": endpoints, "ipv4": ipv4, "ipv6": ipv6,
                         "ports": port_rows, "findings": finding_rows})
 
     @app.route("/api/dashboard/record")
@@ -508,42 +584,21 @@ def register_dashboard_routes(app, store, config, utils):
             "has_request": bool(item.get("request")),
         })
 
-    @app.route("/api/dashboard/nuclei/<id>", methods=["POST"])
-    def dashboard_run_nuclei(id):
-        """Run an on-demand ``nuclei -as`` scan for a single URL (by record id).
+    def _enrich_record(item):
+        """Run ``nuclei -as`` for one record's URL, index findings, mark scanned.
 
-        Triggered when the user clicks the nuclei icon next to a URL in the asset
-        drawer. Runs automatic-scan mode against that URL, indexes any findings
-        (host-joined so they show up for the asset), and marks the record as
-        scanned so the icon renders in its "scanned" (dark) state afterwards.
+        Returns ``(finding_count, indexed, rows)``. Raises if the scan itself
+        fails. Findings are host-joined so the drawer / dashboard pick them up
+        (nuclei's own host may carry a port or differ slightly).
         """
-        if nuclei_scan is None:
-            return jsonify({"error": "nuclei integration unavailable"}), 503
-
-        doc_id = utils.validate_doc_id(id)
-        if not doc_id:
-            return jsonify({"error": "invalid id"}), 400
-        item = store.get(doc_id)
-        if not item:
-            return jsonify({"error": "not found"}), 404
+        doc_id = item.get("_id")
         url = item.get("url")
-        if not url:
-            return jsonify({"error": "record has no url"}), 400
         host = item.get("host") or item.get("ip") or ""
-
-        try:
-            findings = nuclei_scan.scan_url(url)
-        except Exception as e:
-            logger.error(f"nuclei scan failed for {url}: {e}")
-            return jsonify({"error": f"nuclei scan failed: {e}"}), 500
-
+        findings = nuclei_scan.scan_url(url)
         now = datetime.now(timezone.utc).isoformat()
-        indexed = 0
-        rows = []
+        indexed, rows = 0, []
         for rec in findings:
             rec.setdefault("timestamp", now)
-            # Join findings to the asset by host so the drawer / dashboard pick
-            # them up (nuclei's own host may carry a port or differ slightly).
             if host:
                 rec["host"] = host
             if store.index_into(IDX_FINDINGS, _finding_doc_id(rec), rec):
@@ -555,16 +610,74 @@ def register_dashboard_routes(app, store, config, utils):
                 "severity": (info.get("severity") or "unknown").lower(),
                 "matched_at": rec.get("matched-at", ""),
             })
-
         store.update_document(doc_id, {
             "nuclei_scanned": True,
             "nuclei_scanned_at": now,
             "nuclei_finding_count": len(findings),
         })
+        return len(findings), indexed, rows
+
+    @app.route("/api/dashboard/nuclei/<id>", methods=["POST"])
+    def dashboard_run_nuclei(id):
+        """Run an on-demand ``nuclei -as`` scan for a single URL (by record id).
+
+        Triggered when the user clicks the nuclei icon next to a URL in the asset
+        drawer. Runs automatic-scan mode against that URL, indexes any findings,
+        and marks the record scanned so the icon renders in its dark state.
+        """
+        if nuclei_scan is None:
+            return jsonify({"error": "nuclei integration unavailable"}), 503
+        doc_id = utils.validate_doc_id(id)
+        if not doc_id:
+            return jsonify({"error": "invalid id"}), 400
+        item = store.get(doc_id)
+        if not item:
+            return jsonify({"error": "not found"}), 404
+        if not item.get("url"):
+            return jsonify({"error": "record has no url"}), 400
+
+        try:
+            count, indexed, rows = _enrich_record(item)
+        except Exception as e:
+            logger.error(f"nuclei scan failed for {item.get('url')}: {e}")
+            return jsonify({"error": f"nuclei scan failed: {e}"}), 500
         rows.sort(key=lambda r: SEVERITY_RANK.get(r["severity"], 99))
-        return jsonify({"ok": True, "scanned": True, "id": doc_id, "url": url,
-                        "host": host, "finding_count": len(findings),
+        return jsonify({"ok": True, "scanned": True, "id": doc_id, "url": item.get("url"),
+                        "host": item.get("host", ""), "finding_count": count,
                         "indexed": indexed, "findings": rows})
+
+    @app.route("/api/dashboard/nuclei-host", methods=["POST"])
+    def dashboard_run_nuclei_host():
+        """Run ``nuclei -as`` for every URL of a host (the Assets-row trigger).
+
+        Scans each endpoint (e.g. the HTTP and HTTPS URLs) of the host, indexes
+        all findings, and marks each record scanned.
+        """
+        if nuclei_scan is None:
+            return jsonify({"error": "nuclei integration unavailable"}), 503
+        host = utils.sanitize_string_input(request.args.get("host", ""), max_length=253)
+        if not host:
+            return jsonify({"error": "host required"}), 400
+
+        records, _ = store.search({"term": {"host": host}}, source=["url", "host"], size=100)
+        records = [r for r in records if r.get("url")]
+        if not records:
+            return jsonify({"error": "no URLs for host"}), 404
+
+        total, scanned, failed = 0, 0, 0
+        for item in records:
+            try:
+                count, _indexed, _rows = _enrich_record(item)
+                total += count
+                scanned += 1
+            except Exception as e:
+                failed += 1
+                logger.error(f"nuclei scan failed for {item.get('url')}: {e}")
+        if scanned == 0:
+            return jsonify({"error": "all nuclei scans failed"}), 500
+        return jsonify({"ok": True, "scanned": True, "host": host,
+                        "urls_scanned": scanned, "urls_failed": failed,
+                        "finding_count": total})
 
     @app.route("/api/dashboard/interactions")
     def dashboard_interactions():
