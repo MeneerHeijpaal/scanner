@@ -1,0 +1,329 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Admin · Recon Console</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+  :root{
+    color-scheme:light;
+    --plane:#f4f5f3;--surface:#fcfcfb;--surface-2:#f0f1ee;
+    --ink:#0b0b0b;--ink-2:#52514e;--muted:#898781;--hair:#e1e0d9;--hair-strong:#c9c8c0;
+    --accent:#2a78d6;--accent-wash:rgba(42,120,214,.10);
+    --ok:#0ca30c;--warn:#fab219;--danger:#d03b3b;--danger-wash:rgba(208,59,59,.08);
+    --font-ui:"IBM Plex Sans",system-ui,-apple-system,"Segoe UI",sans-serif;
+    --font-mono:"IBM Plex Mono",ui-monospace,"SF Mono",Menlo,Consolas,monospace;
+  }
+  @media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+    color-scheme:dark;--plane:#0d0d0d;--surface:#191a18;--surface-2:#211f1d;
+    --ink:#f7f7f4;--ink-2:#c3c2b7;--muted:#8f8e88;--hair:#2c2c2a;--hair-strong:#3a3a37;
+    --accent:#3987e5;--accent-wash:rgba(57,135,229,.16);
+    --ok:#2bbf2b;--warn:#fbc24a;--danger:#e35a5a;--danger-wash:rgba(227,90,90,.14);}}
+  :root[data-theme="dark"]{
+    color-scheme:dark;--plane:#0d0d0d;--surface:#191a18;--surface-2:#211f1d;
+    --ink:#f7f7f4;--ink-2:#c3c2b7;--muted:#8f8e88;--hair:#2c2c2a;--hair-strong:#3a3a37;
+    --accent:#3987e5;--accent-wash:rgba(57,135,229,.16);
+    --ok:#2bbf2b;--warn:#fbc24a;--danger:#e35a5a;--danger-wash:rgba(227,90,90,.14);}
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--plane);color:var(--ink);font-family:var(--font-ui);font-size:14px;line-height:1.5}
+  h1,h2,h3{margin:0;text-wrap:balance}
+  .mono{font-family:var(--font-mono)}.tnum{font-variant-numeric:tabular-nums}
+  a{color:var(--accent)}
+  .wrap{max-width:900px;margin:0 auto;padding-inline:16px}
+  header.top{position:sticky;top:0;z-index:40;background:color-mix(in srgb,var(--surface) 90%,transparent);
+    backdrop-filter:blur(8px);border-bottom:1px solid var(--hair)}
+  .top-row{display:flex;align-items:center;gap:12px;padding-block:11px}
+  .brand{display:flex;align-items:center;gap:9px;font-weight:600;white-space:nowrap}
+  .brand .dot{width:11px;height:11px;border-radius:3px;background:var(--accent);box-shadow:0 0 0 3px var(--accent-wash)}
+  .brand small{font-weight:500;color:var(--muted);font-size:11px;letter-spacing:.04em;text-transform:uppercase}
+  .spacer{flex:1}
+  .icon-btn{height:34px;padding:0 12px;display:inline-flex;align-items:center;gap:7px;border-radius:8px;
+    border:1px solid var(--hair-strong);background:var(--surface);color:var(--ink-2);cursor:pointer;
+    font-size:13px;text-decoration:none}
+  .icon-btn:hover{color:var(--ink);border-color:var(--muted)}
+  main{padding-block:22px 48px}
+  .page-h{margin:2px 2px 18px}
+  .page-h h1{font-size:20px;font-weight:600}
+  .page-h p{margin:4px 0 0;color:var(--muted);font-size:13px}
+  .card{background:var(--surface);border:1px solid var(--hair);border-radius:12px;padding:18px;margin-bottom:16px}
+  .card.danger{border-color:color-mix(in srgb,var(--danger) 45%,var(--hair));background:var(--danger-wash)}
+  .card h2{font-size:15px;font-weight:600;display:flex;align-items:center;gap:8px}
+  .card .desc{color:var(--ink-2);font-size:12.5px;margin:6px 0 14px;max-width:62ch}
+  .row{display:flex;flex-wrap:wrap;gap:10px;align-items:center}
+  button.btn{height:36px;padding:0 15px;border-radius:8px;border:1px solid var(--hair-strong);
+    background:var(--surface);color:var(--ink);font-size:13px;font-weight:500;cursor:pointer;
+    display:inline-flex;align-items:center;gap:7px;font-family:inherit}
+  button.btn:hover{border-color:var(--muted)}
+  button.btn.primary{background:var(--accent);border-color:var(--accent);color:#fff}
+  button.btn.primary:hover{filter:brightness(1.06)}
+  button.btn.danger{background:var(--danger);border-color:var(--danger);color:#fff}
+  button.btn.danger:hover{filter:brightness(1.06)}
+  button.btn:disabled{opacity:.5;cursor:not-allowed}
+  /* status tiles */
+  .tiles{display:grid;grid-template-columns:repeat(5,1fr);gap:10px}
+  .tile{background:var(--surface-2);border:1px solid var(--hair);border-radius:10px;padding:11px 12px}
+  .tile .t-label{font-size:10.5px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;font-weight:600}
+  .tile .t-val{font-size:22px;font-weight:600;margin-top:4px;line-height:1}
+  @media (max-width:640px){.tiles{grid-template-columns:repeat(2,1fr)}}
+  /* file input */
+  .file-field{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+  input[type=file]{font-size:12.5px;color:var(--ink-2)}
+  .filename{font-family:var(--font-mono);font-size:12px;color:var(--ink-2)}
+  /* checks */
+  .check-list{list-style:none;margin:12px 0 0;padding:0;display:flex;flex-direction:column;gap:8px}
+  .check{display:flex;gap:10px;align-items:flex-start;background:var(--surface-2);border:1px solid var(--hair);
+    border-radius:9px;padding:9px 11px}
+  .check .dot{width:9px;height:9px;border-radius:50%;margin-top:5px;flex:none;background:var(--muted)}
+  .check.ok .dot{background:var(--ok)}.check.fail .dot{background:var(--danger)}
+  .check .c-name{font-weight:600;font-size:12.5px}
+  .check .c-detail{font-size:12px;color:var(--ink-2);word-break:break-word}
+  .result{margin-top:12px;font-size:13px;padding:10px 12px;border-radius:9px;display:none}
+  .result.show{display:block}
+  .result.ok{background:color-mix(in srgb,var(--ok) 12%,transparent);color:var(--ink);border:1px solid color-mix(in srgb,var(--ok) 40%,transparent)}
+  .result.fail{background:var(--danger-wash);color:var(--ink);border:1px solid color-mix(in srgb,var(--danger) 40%,transparent)}
+  .result.info{background:var(--accent-wash);color:var(--ink);border:1px solid color-mix(in srgb,var(--accent) 35%,transparent)}
+  .spin{width:14px;height:14px;border:2px solid color-mix(in srgb,currentColor 30%,transparent);
+    border-top-color:currentColor;border-radius:50%;animation:spin .7s linear infinite;display:inline-block}
+  @keyframes spin{to{transform:rotate(360deg)}}
+  /* modal */
+  .scrim{position:fixed;inset:0;background:rgba(11,11,11,.45);opacity:0;pointer-events:none;transition:opacity .15s;z-index:60}
+  .scrim.open{opacity:1;pointer-events:auto}
+  .modal{position:fixed;z-index:61;left:50%;top:50%;transform:translate(-50%,-48%) scale(.98);
+    width:min(460px,92vw);background:var(--surface);border:1px solid var(--hair-strong);border-radius:14px;
+    padding:20px;opacity:0;pointer-events:none;transition:opacity .15s, transform .15s}
+  .modal.open{opacity:1;pointer-events:auto;transform:translate(-50%,-50%) scale(1)}
+  .modal h3{font-size:16px;font-weight:600}
+  .modal p{color:var(--ink-2);font-size:13px;margin:8px 0 16px}
+  .modal .m-actions{display:flex;flex-direction:column;gap:8px}
+  .modal .m-actions button{width:100%;justify-content:center}
+  @media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+</style>
+</head>
+<body>
+<header class="top">
+  <div class="wrap"><div class="top-row">
+    <div class="brand"><span class="dot"></span>Recon Console <small>admin</small></div>
+    <div class="spacer"></div>
+    <a class="icon-btn" href="/" title="Back to dashboard">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m15 18-6-6 6-6"/></svg>
+      Dashboard</a>
+    <button class="icon-btn" id="theme" title="Toggle theme" aria-label="Toggle theme">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg>
+    </button>
+  </div></div>
+</header>
+
+<main class="wrap">
+  <div class="page-h">
+    <h1>Administration</h1>
+    <p>Back up, restore, or wipe all scan data and labels, and verify the scanning infrastructure.</p>
+  </div>
+
+  <!-- Status -->
+  <section class="card">
+    <h2>Current data</h2>
+    <div class="desc">Everything stored in Elasticsearch plus the hash labels in SQLite.</div>
+    <div class="tiles" id="tiles"></div>
+  </section>
+
+  <!-- Backup -->
+  <section class="card">
+    <h2>Backup</h2>
+    <div class="desc">Download a single <span class="mono">.zip</span> containing every Elasticsearch index
+      (records, ports, findings, interactions) and all hash labels. Keep it somewhere safe — it's everything you need to restore.</div>
+    <div class="row">
+      <button class="btn primary" id="backupBtn">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="M7 10l5 5 5-5"/><path d="M12 15V3"/></svg>
+        Download backup</button>
+    </div>
+    <div class="result" id="backupResult"></div>
+  </section>
+
+  <!-- Restore -->
+  <section class="card">
+    <h2>Import a backup</h2>
+    <div class="desc">Restore from a backup <span class="mono">.zip</span>. If this system already contains data,
+      you'll be asked whether to <b>overwrite</b> everything or <b>merge</b> the backup on top of what's here.</div>
+    <div class="file-field">
+      <input type="file" id="importFile" accept=".zip,application/zip">
+      <button class="btn" id="importBtn" disabled>Import backup</button>
+    </div>
+    <div class="result" id="importResult"></div>
+  </section>
+
+  <!-- Health checks -->
+  <section class="card">
+    <h2>Infrastructure checks</h2>
+    <div class="desc">Verify that scanning agents can be provisioned (Terraform / Hetzner) and that the
+      out-of-band (Interactsh) server replies.</div>
+    <div class="row">
+      <button class="btn" id="tfBtn">Check Terraform / agents</button>
+      <button class="btn" id="oobBtn">Check OOB server</button>
+    </div>
+    <div class="result" id="tfResult"></div>
+    <div class="result" id="oobResult"></div>
+  </section>
+
+  <!-- Danger zone -->
+  <section class="card danger">
+    <h2>Clear all data</h2>
+    <div class="desc">Permanently deletes every Elasticsearch index and all hash labels. This cannot be undone —
+      you'll be offered a backup download first.</div>
+    <div class="row">
+      <button class="btn danger" id="clearBtn">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/></svg>
+        Clear everything</button>
+    </div>
+    <div class="result" id="clearResult"></div>
+  </section>
+</main>
+
+<!-- Confirm modals -->
+<div class="scrim" id="scrim"></div>
+
+<div class="modal" id="clearModal" role="dialog" aria-modal="true">
+  <h3>Clear all data?</h3>
+  <p>This permanently deletes all records, ports, findings, interactions and labels. We strongly recommend
+     downloading a backup first.</p>
+  <div class="m-actions">
+    <button class="btn primary" id="clearBackupFirst">Back up, then clear</button>
+    <button class="btn danger" id="clearNoBackup">Clear without backup</button>
+    <button class="btn" id="clearCancel">Cancel</button>
+  </div>
+</div>
+
+<div class="modal" id="importModal" role="dialog" aria-modal="true">
+  <h3>This system already has data</h3>
+  <p id="importModalText">Choose how to apply the backup.</p>
+  <div class="m-actions">
+    <button class="btn danger" id="importOverwrite">Overwrite — replace everything</button>
+    <button class="btn" id="importMerge">Merge — keep existing, add from backup</button>
+    <button class="btn" id="importCancel">Cancel</button>
+  </div>
+</div>
+
+<script>
+const $=s=>document.querySelector(s);
+const esc=s=>String(s==null?"":s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+const ORDER=[["records","Records"],["ports","Ports"],["findings","Findings"],["interactions","Interactions"],["labels","Labels"]];
+let STATUS={data_present:false};
+
+async function loadStatus(){
+  try{
+    const d=await fetch("/api/admin/status").then(r=>r.json());
+    STATUS=d;
+    const vals={...d.indices,labels:d.labels};
+    $("#tiles").innerHTML=ORDER.map(([k,label])=>`<div class="tile"><div class="t-label">${label}</div>
+      <div class="t-val tnum">${(vals[k]??0).toLocaleString()}</div></div>`).join("");
+  }catch(e){ $("#tiles").innerHTML=`<div class="tile"><div class="t-label">Status</div><div class="t-val">—</div></div>`; }
+}
+
+function showResult(sel,kind,html){const el=$(sel);el.className=`result show ${kind}`;el.innerHTML=html;}
+function hideResult(sel){const el=$(sel);el.className="result";el.innerHTML="";}
+
+/* ---- Backup download (returns a promise that resolves once saved) ---- */
+async function downloadBackup(resultSel){
+  showResult(resultSel,"info",`<span class="spin"></span> Building backup…`);
+  const resp=await fetch("/api/admin/backup");
+  if(!resp.ok){const e=await resp.json().catch(()=>({}));throw new Error(e.error||`HTTP ${resp.status}`);}
+  const blob=await resp.blob();
+  const cd=resp.headers.get("Content-Disposition")||"";
+  const m=cd.match(/filename=([^;]+)/);
+  const name=(m?m[1]:`scanner-backup.zip`).trim().replace(/"/g,"");
+  const url=URL.createObjectURL(blob);
+  const a=document.createElement("a");a.href=url;a.download=name;document.body.appendChild(a);a.click();
+  a.remove();URL.revokeObjectURL(url);
+  showResult(resultSel,"ok",`Backup downloaded: <span class="mono">${esc(name)}</span> (${(blob.size/1024).toFixed(0)} KB).`);
+}
+$("#backupBtn").onclick=async()=>{
+  $("#backupBtn").disabled=true;
+  try{ await downloadBackup("#backupResult"); }
+  catch(e){ showResult("#backupResult","fail",`Backup failed: ${esc(e.message)}`); }
+  finally{ $("#backupBtn").disabled=false; }
+};
+
+/* ---- Modals ---- */
+function openModal(id){$("#scrim").classList.add("open");$(id).classList.add("open");}
+function closeModals(){$("#scrim").classList.remove("open");document.querySelectorAll(".modal").forEach(m=>m.classList.remove("open"));}
+$("#scrim").onclick=closeModals;
+document.addEventListener("keydown",e=>{if(e.key==="Escape")closeModals();});
+
+/* ---- Clear flow ---- */
+$("#clearBtn").onclick=()=>{ hideResult("#clearResult"); openModal("#clearModal"); };
+$("#clearCancel").onclick=closeModals;
+async function doClear(){
+  showResult("#clearResult","info",`<span class="spin"></span> Clearing all data…`);
+  const d=await fetch("/api/admin/clear",{method:"POST"}).then(r=>r.json());
+  if(d&&d.ok){
+    const n=Object.values(d.cleared||{}).reduce((a,b)=>a+b,0);
+    showResult("#clearResult","ok",`Cleared ${n.toLocaleString()} document(s) and all labels.`);
+    loadStatus();
+  }else{ showResult("#clearResult","fail",`Clear failed: ${esc((d&&d.error)||"unknown error")}`); }
+}
+$("#clearBackupFirst").onclick=async()=>{
+  closeModals();
+  try{ await downloadBackup("#clearResult"); await doClear(); }
+  catch(e){ showResult("#clearResult","fail",`Backup failed, nothing was cleared: ${esc(e.message)}`); }
+};
+$("#clearNoBackup").onclick=async()=>{ closeModals(); try{ await doClear(); }catch(e){ showResult("#clearResult","fail",esc(e.message)); } };
+
+/* ---- Import flow ---- */
+$("#importFile").onchange=()=>{ $("#importBtn").disabled=!$("#importFile").files.length; hideResult("#importResult"); };
+$("#importBtn").onclick=async()=>{
+  if(!$("#importFile").files.length)return;
+  // Ask about overwrite vs merge only when the system already has data.
+  await loadStatus();
+  if(STATUS.data_present){
+    $("#importModalText").textContent="This system already contains data. Overwrite everything with the backup, or merge the backup on top of what's already here?";
+    openModal("#importModal");
+  }else{
+    runImport("overwrite"); // empty system: either mode is equivalent
+  }
+};
+$("#importCancel").onclick=closeModals;
+$("#importOverwrite").onclick=()=>{ closeModals(); runImport("overwrite"); };
+$("#importMerge").onclick=()=>{ closeModals(); runImport("merge"); };
+async function runImport(mode){
+  const f=$("#importFile").files[0];
+  if(!f)return;
+  $("#importBtn").disabled=true;
+  showResult("#importResult","info",`<span class="spin"></span> Importing (${mode})…`);
+  try{
+    const fd=new FormData();fd.append("file",f);fd.append("mode",mode);
+    const d=await fetch("/api/admin/import",{method:"POST",body:fd}).then(r=>r.json());
+    if(d&&d.ok){
+      const parts=Object.entries(d.restored||{}).map(([k,v])=>`${k}: ${v.indexed}${v.errors?` (${v.errors} err)`:""}`);
+      showResult("#importResult","ok",`Imported (${esc(d.mode)}). ${esc(parts.join(" · "))} · labels: ${d.labels_restored}.`);
+      loadStatus();
+    }else{ showResult("#importResult","fail",`Import failed: ${esc((d&&d.error)||"unknown error")}`); }
+  }catch(e){ showResult("#importResult","fail",`Import failed: ${esc(e.message)}`); }
+  finally{ $("#importBtn").disabled=false; }
+}
+
+/* ---- Health checks ---- */
+function renderChecks(sel,d){
+  const kind=d.ok?"ok":"fail";
+  const items=(d.checks||[]).map(c=>`<li class="check ${c.status==='ok'?'ok':'fail'}"><span class="dot"></span>
+    <span><span class="c-name">${esc(c.name)}</span><br><span class="c-detail">${esc(c.detail)}</span></span></li>`).join("");
+  showResult(sel,kind,`<b>${esc(d.summary||"")}</b><ul class="check-list">${items}</ul>`);
+}
+async function runCheck(sel,url,btn){
+  btn.disabled=true;
+  showResult(sel,"info",`<span class="spin"></span> Checking…`);
+  try{ renderChecks(sel,await fetch(url).then(r=>r.json())); }
+  catch(e){ showResult(sel,"fail",`Check failed: ${esc(e.message)}`); }
+  finally{ btn.disabled=false; }
+}
+$("#tfBtn").onclick=()=>runCheck("#tfResult","/api/admin/check/terraform",$("#tfBtn"));
+$("#oobBtn").onclick=()=>runCheck("#oobResult","/api/admin/check/oob",$("#oobBtn"));
+
+/* theme */
+$("#theme").onclick=()=>{const cur=document.documentElement.getAttribute("data-theme");
+  const dark=cur?cur==="dark":matchMedia("(prefers-color-scheme: dark)").matches;
+  document.documentElement.setAttribute("data-theme",dark?"light":"dark");};
+
+loadStatus();
+</script>
+</body>
+</html>

@@ -26,6 +26,7 @@ from utils import ScannerUtils
 from elasticsearch_manager import ElasticsearchManager
 import routes
 import dashboard
+import admin
 
 logging.basicConfig(
     level=logging.INFO,
@@ -99,6 +100,8 @@ def create_app(config):
     app.config['SESSION_TYPE'] = config['flask']['session_type']
     app.config['SESSION_PERMANENT'] = config['flask']['session_permanent']
     app.config['SESSION_USE_SIGNER'] = config['flask']['session_use_signer']
+    # Cap backup uploads (admin restore). 2 GiB covers the 1 GiB uncompressed limit.
+    app.config['MAX_CONTENT_LENGTH'] = config['flask'].get('max_upload_bytes', 2 * 1024 * 1024 * 1024)
 
     # Connect to Elasticsearch (the primary data store).
     store = ElasticsearchManager(config)
@@ -121,6 +124,7 @@ def create_app(config):
     utils = ScannerUtils(config, store, sqlite_db)
     routes.register_routes(app, store, config, utils)
     dashboard.register_dashboard_routes(app, store, config, utils)
+    admin.register_admin_routes(app, store, config, utils)
     return app
 
 

@@ -19,6 +19,7 @@ results.
 - **On-demand Enrichment**: nuclei is not part of the batch pipeline — click the nuclei icon next to a URL in the dashboard to run an automatic scan (`-as`) for just that URL; the icon goes from light gray to dark gray once it has run
 - **Out-of-band Detection**: self-hosted Interactsh server for blind SSRF/RCE/etc.
 - **Hash Labeling**: Tag and categorize responses using SHA256 hashes (stored in local SQLite)
+- **Admin Console**: Back up / restore (overwrite or merge) all Elastic data and labels as a `.zip`, wipe everything, and check Terraform/Hetzner and OOB-server connectivity (`/admin`)
 - **Export Capabilities**: Download URLs, domains, raw responses, and headers
 - **Idempotent Import**: Records are keyed by URL, so re-importing a URL updates it in place
 - **Scale-out**: Distribute scanning across multiple Hetzner VPSes via Terraform
@@ -233,6 +234,23 @@ See [`Documentation/dashboard.md`](Documentation/dashboard.md).
 
 Records are indexed directly into Elasticsearch and keyed by URL, so re-importing
 the same URL updates the existing record instead of creating a duplicate.
+
+### Administration (`/admin`)
+
+The admin console (gear icon in the dashboard header, or `/admin`) handles
+whole-system maintenance:
+
+- **Backup** — download a single `.zip` of every Elasticsearch index (records,
+  ports, findings, interactions) plus the hash labels and their index mappings.
+- **Import** — restore a backup `.zip`. If the system already holds data you're
+  asked whether to **overwrite** everything or **merge** the backup on top.
+- **Clear everything** — wipe all indices and labels (you're offered a backup
+  download first; the action cannot be undone otherwise).
+- **Infrastructure checks** — verify agents can be provisioned (terraform CLI +
+  a live Hetzner Cloud API auth check using the token in `terraform.tfvars`) and
+  that the Interactsh (OOB) server resolves and replies.
+
+The Hetzner token is sent only to `api.hetzner.cloud` for the auth check.
 
 ### Port scanning (naabu)
 

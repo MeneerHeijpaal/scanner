@@ -351,6 +351,101 @@ class ElasticsearchManager:
             logger.warning(f"Failed to index into {index}: {e}")
             return False
 
+    # ------------------------------------------------------------------ #
+    # Admin helpers: whole-index backup / restore / clear (any index)
+    # ------------------------------------------------------------------ #
+
+    def index_exists(self, index: str) -> bool:
+        """Return True if ``index`` exists."""
+        if not self.is_connected or not self.client:
+            return False
+        try:
+            return bool(self.client.indices.exists(index=index))
+        except Exception:
+            return False
+
+    def get_mapping(self, index: str) -> Optional[Dict[str, Any]]:
+        """Return an index's mappings dict (just the ``mappings`` body), or None."""
+        if not self.index_exists(index):
+            return None
+        try:
+            resp = self.client.indices.get_mapping(index=index)
+            return dict(resp.get(index, {}).get("mappings", {})) or {}
+        except Exception as e:
+            logger.warning(f"get_mapping({index}) failed: {e}")
+            return None
+
+    def iter_all(self, index: str) -> Iterable[Dict[str, Any]]:
+        """Yield every document in ``index`` as ``{'_id', '_source'}`` (scroll)."""
+        if not self.index_exists(index):
+            return
+        try:
+            for hit in helpers.scan(self.client, index=index,
+                                    query={"query": {"match_all": {}}}):
+                yield {"_id": hit["_id"], "_source": hit.get("_source", {})}
+        except Exception as e:
+            logger.error(f"iter_all({index}) failed: {e}")
+            return
+
+    def clear_index(self, index: str) -> int:
+        """Delete all documents in ``index`` (keeps the mapping). Returns count."""
+        if not self.index_exists(index):
+            return 0
+        try:
+            resp = self.client.delete_by_query(
+                index=index, query={"match_all": {}}, refresh=True, conflicts="proceed")
+            return int(resp.get("deleted", 0))
+        except Exception as e:
+            logger.error(f"clear_index({index}) failed: {e}")
+            return 0
+
+    def delete_index(self, index: str) -> bool:
+        """Delete an index entirely (ignores a missing index)."""
+        if not self.is_connected or not self.client:
+            return False
+        try:
+            if self.client.indices.exists(index=index):
+                self.client.indices.delete(index=index)
+            return True
+        except Exception as e:
+            logger.warning(f"delete_index({index}) failed: {e}")
+            return False
+
+    def create_index_with(self, index: str, mappings: Optional[Dict[str, Any]] = None) -> bool:
+        """Create ``index`` (optionally with an explicit mappings body)."""
+        if not self.is_connected or not self.client:
+            return False
+        try:
+            if self.client.indices.exists(index=index):
+                return True
+            if mappings:
+                self.client.indices.create(index=index, mappings=mappings)
+            else:
+                self.client.indices.create(index=index)
+            return True
+        except Exception as e:
+            logger.warning(f"create_index_with({index}) failed: {e}")
+            return False
+
+    def bulk_restore(self, index: str, docs: Iterable[Dict[str, Any]]) -> Tuple[int, int]:
+        """Bulk upsert ``{'_id', '_source'}`` docs into ``index``. Returns (ok, err)."""
+        if not self.is_connected or not self.client:
+            return (0, 0)
+
+        def actions():
+            for d in docs:
+                yield {"_index": index, "_id": d.get("_id"), "_source": d.get("_source", {})}
+
+        try:
+            success, errors = helpers.bulk(
+                self.client, actions(), chunk_size=self.bulk_batch_size,
+                raise_on_error=False, raise_on_exception=False)
+            error_count = len(errors) if isinstance(errors, list) else 0
+            return (success, error_count)
+        except Exception as e:
+            logger.error(f"bulk_restore({index}) failed: {e}")
+            return (0, 0)
+
     def delete_document(self, doc_id: str) -> bool:
         """Delete a document by id (ignores 404)."""
         if not self.is_connected or not self.client:
